@@ -18,6 +18,7 @@ drive_sync.py — автоматическая синхронизация PDF с
 """
 
 import asyncio
+import json
 import logging
 import os
 import tempfile
@@ -39,6 +40,9 @@ DRIVE_SYNC_INTERVAL_MINUTES = int(
     os.getenv("DRIVE_SYNC_INTERVAL_MINUTES", "60"))
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv(
     "GOOGLE_SERVICE_ACCOUNT_JSON", "credentials.json")
+# На Railway передаётся содержимое JSON целиком
+GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT = os.getenv(
+    "GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT", "")
 DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -47,16 +51,25 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ── Google Drive клиент ────────────────────────────────────────────────────
 
 def get_drive_service():
-    """Создаём клиент Google Drive API через Service Account."""
-    if not os.path.exists(GOOGLE_SERVICE_ACCOUNT_JSON):
+    """Создаём клиент Google Drive API через Service Account.
+
+    Поддерживает два способа передачи credentials:
+    - GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT — содержимое JSON (для Railway/cloud)
+    - GOOGLE_SERVICE_ACCOUNT_JSON — путь к файлу (для локальной разработки)
+    """
+    if GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT:
+        info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT)
+        credentials = service_account.Credentials.from_service_account_info(
+            info, scopes=SCOPES)
+    elif os.path.exists(GOOGLE_SERVICE_ACCOUNT_JSON):
+        credentials = service_account.Credentials.from_service_account_file(
+            GOOGLE_SERVICE_ACCOUNT_JSON, scopes=SCOPES)
+    else:
         raise FileNotFoundError(
-            f"Google credentials не найдены: {GOOGLE_SERVICE_ACCOUNT_JSON}\n"
-            "Скачайте JSON ключ сервис-аккаунта и укажите путь в .env"
+            "Google credentials не найдены. Укажите "
+            "GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT (содержимое JSON) "
+            "или GOOGLE_SERVICE_ACCOUNT_JSON (путь к файлу) в .env"
         )
-    credentials = service_account.Credentials.from_service_account_file(
-        GOOGLE_SERVICE_ACCOUNT_JSON,
-        scopes=SCOPES,
-    )
     return build("drive", "v3", credentials=credentials)
 
 
