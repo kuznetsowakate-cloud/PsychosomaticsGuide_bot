@@ -87,9 +87,11 @@ def list_pdfs_in_folder(service, folder_id: str) -> list[dict]:
 
 
 def get_already_synced_ids() -> set[str]:
-    """Получаем google_drive_id всех уже загруженных источников."""
+    """Получаем google_drive_id успешно загруженных источников (is_active=True).
+    Записи с is_active=False — незавершённый ingest, они будут ретраиться."""
     result = supabase.table("sources").select(
-        "google_drive_id").not_.is_("google_drive_id", "null").execute()
+        "google_drive_id"
+    ).eq("is_active", True).not_.is_("google_drive_id", "null").execute()
     return {row["google_drive_id"] for row in result.data}
 
 
@@ -153,7 +155,7 @@ async def sync_once(bot=None) -> dict:
                     "filename": file_name,
                     "google_drive_id": file_id,
                     "tags": [],
-                    "is_active": True,
+                    "is_active": False,
                 }).execute()
                 source_id = source_result.data[0]["id"]
 
@@ -163,6 +165,10 @@ async def sync_once(bot=None) -> dict:
                 pages = extract_text_from_pdf(dest_path)
                 chunks = split_into_chunks(pages)
                 await upload_chunks(chunks, source_id, [])
+
+                supabase.table("sources").update(
+                    {"is_active": True}
+                ).eq("id", source_id).execute()
 
                 results["new"] += 1
                 logger.info(
