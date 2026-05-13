@@ -7,6 +7,7 @@ admin.py — хендлеры для администратора.
 3. Файл сохраняется и обрабатывается автоматически
 """
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -58,10 +59,16 @@ async def cmd_stats(message: Message):
     from config.settings import SUPABASE_URL, SUPABASE_KEY
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    sources_count = len(sb.table("sources").select("id").execute().data)
-    chunks_count = len(sb.table("chunks").select("id").execute().data)
-    users_count = len(sb.table("users").select("telegram_id").execute().data)
-    queries_count = len(sb.table("query_log").select("id").execute().data)
+    def _get_stats():
+        sources = len(sb.table("sources").select("id").execute().data)
+        chunks = len(sb.table("chunks").select("id").execute().data)
+        users = len(sb.table("users").select("telegram_id").execute().data)
+        queries = len(sb.table("query_log").select("id").execute().data)
+        return sources, chunks, users, queries
+
+    sources_count, chunks_count, users_count, queries_count = (
+        await asyncio.to_thread(_get_stats)
+    )
 
     await message.answer(
         f"📊 <b>Статистика</b>\n\n"
@@ -80,8 +87,10 @@ async def cmd_sources(message: Message):
     from config.settings import SUPABASE_URL, SUPABASE_KEY
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    result = sb.table("sources").select(
-        "id, title, author, is_active").order("id").execute()
+    result = await asyncio.to_thread(
+        lambda: sb.table("sources").select(
+            "id, title, author, is_active").order("id").execute()
+    )
 
     if not result.data:
         await message.answer("База источников пуста.")

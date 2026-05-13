@@ -8,6 +8,7 @@ rag.py — RAG поиск по всей базе + агрегированный 
 4. Claude агрегирует все найденные данные в единый ответ
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -98,13 +99,15 @@ async def embed_query(query: str) -> list[float]:
     return response.data[0].embedding
 
 
-def search_chunks(embedding: list[float]) -> list[SearchResult]:
+async def search_chunks(embedding: list[float]) -> list[SearchResult]:
     """Векторный поиск по всей базе через Supabase RPC."""
-    result = supabase.rpc("search_chunks", {
-        "query_embedding": embedding,
-        "match_count": TOP_K,
-        "min_similarity": MIN_SIMILARITY,
-    }).execute()
+    result = await asyncio.to_thread(
+        lambda: supabase.rpc("search_chunks", {
+            "query_embedding": embedding,
+            "match_count": TOP_K,
+            "min_similarity": MIN_SIMILARITY,
+        }).execute()
+    )
 
     if not result.data:
         return []
@@ -122,18 +125,22 @@ def search_chunks(embedding: list[float]) -> list[SearchResult]:
     ]
 
 
-def get_source_names(chunk_ids: list[int]) -> dict[int, str]:
+async def get_source_names(chunk_ids: list[int]) -> dict[int, str]:
     """Получаем названия источников для найденных чанков."""
-    result = supabase.rpc("get_sources_for_chunks", {
-        "chunk_ids": chunk_ids,
-    }).execute()
+    result = await asyncio.to_thread(
+        lambda: supabase.rpc("get_sources_for_chunks", {
+            "chunk_ids": chunk_ids,
+        }).execute()
+    )
 
     if not result.data:
         return {}
 
-    return {row["source_id"]: f"{row['title']}" +
-            (f" ({row['author']})" if row.get("author") else "")
-            for row in result.data}
+    return {
+        row["source_id"]: row["title"] +
+        (f" ({row['author']})" if row.get("author") else "")
+        for row in result.data
+    }
 
 
 def build_context(
@@ -181,7 +188,7 @@ async def rag_search(query: str) -> RAGResponse:
 
     # 2. Ищем похожие чанки по всей базе
     logger.info("RAG: поиск в базе...")
-    chunks = search_chunks(embedding)
+    chunks = await search_chunks(embedding)
 
     if not chunks:
         return RAGResponse(
@@ -197,7 +204,7 @@ async def rag_search(query: str) -> RAGResponse:
 
     # 3. Получаем названия источников
     chunk_ids = [c.chunk_id for c in chunks]
-    source_names = get_source_names(chunk_ids)
+    source_names = await get_source_names(chunk_ids)
 
     # 4. Собираем уникальные источники для отображения
     unique_sources = list(dict.fromkeys(

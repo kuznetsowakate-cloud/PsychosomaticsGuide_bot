@@ -36,7 +36,7 @@ class UserStates(StatesGroup):
 @user_router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    user = get_or_create_user(
+    await get_or_create_user(
         telegram_id=message.from_user.id,
         username=message.from_user.username or "",
         full_name=message.from_user.full_name or "",
@@ -119,7 +119,7 @@ async def on_payment(message: Message):
     plan = payload.replace("sub_", "")
     stars = payment.total_amount
 
-    activate_subscription(
+    await activate_subscription(
         telegram_id=message.from_user.id,
         plan=plan,
         payment_id=payment.telegram_payment_charge_id,
@@ -155,13 +155,13 @@ async def _process_query(message: Message, query: str):
     telegram_id = message.from_user.id
 
     # Проверяем пользователя и лимит
-    user = get_or_create_user(
+    user = await get_or_create_user(
         telegram_id=telegram_id,
         username=message.from_user.username or "",
         full_name=message.from_user.full_name or "",
     )
 
-    can_query, remaining = check_query_limit(user)
+    can_query, remaining = await check_query_limit(user)
     if not can_query:
         await message.answer(LIMIT_REACHED, reply_markup=kb_subscribe())
         return
@@ -193,8 +193,8 @@ async def _process_query(message: Message, query: str):
                 await message.answer(part, reply_markup=kb)
 
         # Обновляем статистику
-        increment_query_count(telegram_id)
-        save_query_log(
+        await increment_query_count(telegram_id)
+        await save_query_log(
             telegram_id=telegram_id,
             query=query,
             response=result.answer,
