@@ -24,7 +24,7 @@ from config.settings import (
 logger = logging.getLogger(__name__)
 
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+claude_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Параметры поиска
@@ -153,15 +153,15 @@ def build_context(
     return "\n\n---\n\n".join(parts)
 
 
-def generate_answer(query: str, context: str, sources_line: str) -> str:
-    """Синхронный вызов Claude для генерации агрегированного ответа."""
+async def generate_answer(query: str, context: str, sources_line: str) -> str:
+    """Асинхронный вызов Claude для генерации агрегированного ответа."""
     prompt = AGGREGATION_PROMPT.format(
         query=query,
         context=context,
         sources_line=sources_line,
     )
 
-    message = claude_client.messages.create(
+    message = await claude_client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=1500,
         system=SYSTEM_PROMPT,
@@ -211,7 +211,7 @@ async def rag_search(query: str) -> RAGResponse:
 
     # 6. Генерируем агрегированный ответ через Claude
     logger.info("RAG: генерация ответа через Claude...")
-    answer = generate_answer(query, context, sources_line)
+    answer = await generate_answer(query, context, sources_line)
 
     return RAGResponse(
         answer=answer,
