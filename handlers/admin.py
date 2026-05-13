@@ -13,7 +13,7 @@ import os
 import tempfile
 
 from aiogram import Router, F
-from aiogram.filters import Command
+from aiogram.filters import Command, BaseFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
@@ -22,11 +22,15 @@ from config.settings import ADMIN_IDS
 from services.ingest import ingest_pdf
 
 logger = logging.getLogger(__name__)
+
+
+class IsAdmin(BaseFilter):
+    async def __call__(self, message: Message) -> bool:
+        return message.from_user.id in ADMIN_IDS
+
+
 admin_router = Router()
-
-
-def is_admin(telegram_id: int) -> bool:
-    return telegram_id in ADMIN_IDS
+admin_router.message.filter(IsAdmin())
 
 
 class AdminUpload(StatesGroup):
@@ -40,8 +44,6 @@ class AdminUpload(StatesGroup):
 
 @admin_router.message(Command("admin"))
 async def cmd_admin(message: Message):
-    if not is_admin(message.from_user.id):
-        return
     await message.answer(
         "🔧 <b>Панель администратора</b>\n\n"
         "Доступные команды:\n"
@@ -53,8 +55,6 @@ async def cmd_admin(message: Message):
 
 @admin_router.message(Command("stats"))
 async def cmd_stats(message: Message):
-    if not is_admin(message.from_user.id):
-        return
     from supabase import create_client
     from config.settings import SUPABASE_URL, SUPABASE_KEY
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -81,8 +81,6 @@ async def cmd_stats(message: Message):
 
 @admin_router.message(Command("sources"))
 async def cmd_sources(message: Message):
-    if not is_admin(message.from_user.id):
-        return
     from supabase import create_client
     from config.settings import SUPABASE_URL, SUPABASE_KEY
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -112,9 +110,6 @@ async def cmd_sources(message: Message):
 
 @admin_router.message(F.document)
 async def on_document(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-
     doc = message.document
     if not doc.file_name.lower().endswith(".pdf"):
         await message.answer("Поддерживаются только PDF файлы.")

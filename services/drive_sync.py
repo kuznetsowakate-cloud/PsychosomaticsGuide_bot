@@ -47,11 +47,17 @@ _CREDS_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "credentials.json")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+_drive_service = None
+
 
 # ── Google Drive клиент ────────────────────────────────────────────────────
 
 def get_drive_service():
-    """Создаём клиент Google Drive API через Service Account."""
+    """Возвращает клиент Google Drive API (создаётся один раз при первом вызове)."""
+    global _drive_service
+    if _drive_service is not None:
+        return _drive_service
+
     raw = _CREDS_CONTENT or _CREDS_JSON
     if raw.strip().startswith("{"):
         info = json.loads(raw)
@@ -66,7 +72,8 @@ def get_drive_service():
             "GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT (содержимое JSON) "
             "или GOOGLE_SERVICE_ACCOUNT_JSON (путь к файлу) в .env"
         )
-    return build("drive", "v3", credentials=credentials)
+    _drive_service = build("drive", "v3", credentials=credentials)
+    return _drive_service
 
 
 # ── Работа с файлами ───────────────────────────────────────────────────────
@@ -117,8 +124,8 @@ async def sync_once(bot=None) -> dict:
 
     try:
         service = get_drive_service()
-    except FileNotFoundError as e:
-        logger.error("Drive sync: %s", e)
+    except Exception as e:
+        logger.error("Drive sync: ошибка создания Drive клиента: %s", e)
         return {"new": 0, "errors": [str(e)]}
 
     drive_files = list_pdfs_in_folder(service, DRIVE_FOLDER_ID)

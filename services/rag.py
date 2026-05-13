@@ -170,8 +170,12 @@ async def generate_answer(query: str, context: str, sources_line: str) -> str:
 
     message = await claude_client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=1500,
-        system=SYSTEM_PROMPT,
+        max_tokens=2500,
+        system=[{
+            "type": "text",
+            "text": SYSTEM_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        }],
         messages=[{"role": "user", "content": prompt}],
     )
 
