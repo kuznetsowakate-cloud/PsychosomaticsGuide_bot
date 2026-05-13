@@ -114,6 +114,18 @@ as $$
 $$;
 
 -- ============================================================
+-- RPC ФУНКЦИЯ: атомарное увеличение счётчика запросов
+-- ============================================================
+create or replace function increment_user_query_count(user_telegram_id bigint)
+returns void
+language sql
+as $$
+    update users
+    set queries_today = queries_today + 1
+    where telegram_id = user_telegram_id;
+$$;
+
+-- ============================================================
 -- RPC ФУНКЦИЯ: получить источники для найденных чанков
 -- ============================================================
 create or replace function get_sources_for_chunks(chunk_ids bigint[])

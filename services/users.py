@@ -12,7 +12,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 def get_or_create_user(telegram_id: int, username: str = "",
-                        full_name: str = "") -> dict:
+                       full_name: str = "") -> dict:
     """Получаем или создаём пользователя."""
     result = supabase.table("users").select("*").eq(
         "telegram_id", telegram_id).execute()
@@ -63,14 +63,10 @@ def check_query_limit(user: dict) -> tuple[bool, int]:
 
 
 def increment_query_count(telegram_id: int) -> None:
-    """Увеличиваем счётчик запросов пользователя."""
-    result = supabase.table("users").select(
-        "queries_today").eq("telegram_id", telegram_id).execute()
-    if result.data:
-        current = result.data[0].get("queries_today", 0)
-        supabase.table("users").update({
-            "queries_today": current + 1,
-        }).eq("telegram_id", telegram_id).execute()
+    """Увеличиваем счётчик запросов пользователя (атомарно через SQL)."""
+    supabase.rpc("increment_user_query_count", {
+        "user_telegram_id": telegram_id,
+    }).execute()
 
 
 def save_query_log(telegram_id: int, query: str,
@@ -88,7 +84,7 @@ def save_query_log(telegram_id: int, query: str,
 
 
 def activate_subscription(telegram_id: int, plan: str,
-                           payment_id: str, amount: int) -> None:
+                          payment_id: str, amount: int) -> None:
     """Активируем подписку пользователя."""
     days = PLAN_DAYS.get(plan, 30)
     until = (datetime.now(timezone.utc) +
