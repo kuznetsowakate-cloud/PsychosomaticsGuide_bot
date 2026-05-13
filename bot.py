@@ -6,10 +6,9 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.fsm.storage.memory import MemoryStorage
-
 from config.settings import BOT_TOKEN
 from handlers import user_router, admin_router
+from services.fsm_storage import SupabaseStorage
 
 
 async def main():
@@ -28,7 +27,7 @@ async def main():
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=SupabaseStorage())
 
     dp.include_router(admin_router)   # admin первым (проверка ADMIN_IDS)
     dp.include_router(user_router)

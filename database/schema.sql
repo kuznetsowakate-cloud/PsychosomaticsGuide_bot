@@ -82,6 +82,15 @@ create table if not exists payments (
 );
 
 -- ============================================================
+-- FSM СОСТОЯНИЯ (персистентное хранилище для aiogram)
+-- ============================================================
+create table if not exists fsm_states (
+    key     text primary key,   -- bot_id:chat_id:user_id:destiny
+    state   text,
+    data    jsonb default '{}'
+);
+
+-- ============================================================
 -- RPC ФУНКЦИЯ: векторный поиск по чанкам
 -- ============================================================
 create or replace function search_chunks(
