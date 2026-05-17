@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import traceback
 
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -182,15 +183,16 @@ async def _process_query(message: Message, query: str):
             return
 
         # Отправляем ответ (разбиваем если > 4096 символов)
+        # parse_mode=None: ответ Claude — plain text, не HTML
         answer = result.answer
         if len(answer) <= 4096:
-            await message.answer(answer, reply_markup=kb_after_answer())
+            await message.answer(
+                answer, reply_markup=kb_after_answer(), parse_mode=None)
         else:
-            # Разбиваем на части
             parts = [answer[i:i+4000] for i in range(0, len(answer), 4000)]
             for i, part in enumerate(parts):
                 kb = kb_after_answer() if i == len(parts) - 1 else None
-                await message.answer(part, reply_markup=kb)
+                await message.answer(part, reply_markup=kb, parse_mode=None)
 
         # Обновляем статистику
         await increment_query_count(telegram_id)
@@ -202,8 +204,14 @@ async def _process_query(message: Message, query: str):
         )
 
     except Exception as e:
-        logger.error("Ошибка RAG для user %d: %s", telegram_id, e)
-        await thinking_msg.delete()
+        logger.error(
+            "Ошибка RAG для user %d: %s\n%s",
+            telegram_id, e, traceback.format_exc(),
+        )
+        try:
+            await thinking_msg.delete()
+        except Exception:
+            pass
         await message.answer(
             "Произошла ошибка при обработке запроса. Попробуйте ещё раз.",
             reply_markup=kb_back(),
