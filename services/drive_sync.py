@@ -233,6 +233,12 @@ async def sync_once(bot=None) -> dict:
                     pages = [(1, extracted_text)]
                 else:
                     pages = extract_text_from_pdf(dest_path)
+                    if not pages:
+                        raise ValueError(
+                            "PDF не содержит текстового слоя — возможно, "
+                            "это скан. Загрузите страницы как JPEG/PNG "
+                            "для распознавания через Claude Vision."
+                        )
 
                 chunks = split_into_chunks(pages)
                 await upload_chunks(chunks, source_id, [])
