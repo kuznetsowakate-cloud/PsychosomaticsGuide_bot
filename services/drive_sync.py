@@ -125,11 +125,9 @@ def download_file(service, file_id: str, dest_path: str) -> None:
             _, done = downloader.next_chunk()
 
 
-async def extract_text_from_image(image_path: str, mime_type: str) -> str:
-    """Извлекает текст из изображения через Claude Vision."""
-    with open(image_path, "rb") as f:
-        image_data = base64.standard_b64encode(f.read()).decode("utf-8")
-
+async def _vision_request(image_bytes: bytes, mime_type: str) -> str:
+    """Отправляет изображение в Claude Vision, возвращает извлечённый текст."""
+    image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
     response = await claude_client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=4096,
@@ -157,6 +155,38 @@ async def extract_text_from_image(image_path: str, mime_type: str) -> str:
         }],
     )
     return response.content[0].text
+
+
+async def extract_text_from_image(image_path: str, mime_type: str) -> str:
+    """Извлекает текст из файла-изображения через Claude Vision."""
+    with open(image_path, "rb") as f:
+        return await _vision_request(f.read(), mime_type)
+
+
+async def extract_text_from_scanned_pdf(
+    pdf_path: str,
+) -> list[tuple[int, str]]:
+    """Рендерит страницы скан-PDF в PNG и извлекает текст через Claude Vision.
+
+    Используется как fallback, когда pdfplumber не находит текстового слоя.
+    """
+    import fitz  # PyMuPDF — импорт здесь, т.к. нужен только при скан-PDF
+
+    doc = fitz.open(pdf_path)
+    pages = []
+    try:
+        for i, page in enumerate(doc, start=1):
+            # 2x zoom — достаточно для нормального OCR, не перегружает память
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+            image_bytes = pix.tobytes("png")
+            logger.info(
+                "Drive sync: Vision OCR страница %d/%d...", i, len(doc))
+            text = await _vision_request(image_bytes, "image/png")
+            if text.strip():
+                pages.append((i, text.strip()))
+    finally:
+        doc.close()
+    return pages
 
 
 # ── Основной цикл синхронизации ────────────────────────────────────────────
@@ -234,10 +264,15 @@ async def sync_once(bot=None) -> dict:
                 else:
                     pages = extract_text_from_pdf(dest_path)
                     if not pages:
+                        logger.info(
+                            "Drive sync: '%s' — текстового слоя нет, "
+                            "запускаю Vision OCR...", file_name,
+                        )
+                        pages = await extract_text_from_scanned_pdf(dest_path)
+                    if not pages:
                         raise ValueError(
-                            "PDF не содержит текстового слоя — возможно, "
-                            "это скан. Загрузите страницы как JPEG/PNG "
-                            "для распознавания через Claude Vision."
+                            "PDF пустой: ни текстового слоя, "
+                            "ни изображений страниц"
                         )
 
                 chunks = split_into_chunks(pages)
