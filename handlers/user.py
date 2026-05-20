@@ -9,8 +9,9 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery
 
 from keyboards.inline import (
-    kb_main_menu, kb_subscribe, kb_back, kb_after_answer,
+    kb_main_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
 )
+from services.chain_calc import calculate_chain, parse_chain_input
 from services.rag import rag_search
 from services.users import (
     get_or_create_user, check_query_limit,
@@ -21,7 +22,7 @@ from config.settings import PLAN_PRICES
 from texts.messages import (
     WELCOME, HELP_TEXT, SEARCH_PROMPT, THINKING,
     LIMIT_REACHED, NO_RESULTS, SUBSCRIBE_TEXT,
-    PAYMENT_SUCCESS,
+    PAYMENT_SUCCESS, CHAIN_PROMPT, CHAIN_PARSE_ERROR,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ user_router = Router()
 
 class UserStates(StatesGroup):
     waiting_query = State()
+    waiting_chain_input = State()
 
 
 # ── /start ─────────────────────────────────────────────────────────────────
@@ -140,6 +142,33 @@ async def on_payment(message: Message):
 async def on_search_query(message: Message, state: FSMContext):
     await state.clear()
     await _process_query(message, message.text or "")
+
+
+@user_router.callback_query(F.data == "action_chain")
+async def cb_chain(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(UserStates.waiting_chain_input)
+    await callback.message.answer(CHAIN_PROMPT)
+    await callback.answer()
+
+
+@user_router.message(UserStates.waiting_chain_input)
+async def on_chain_input(message: Message, state: FSMContext):
+    await state.clear()
+    parsed = parse_chain_input(message.text or "")
+    if not parsed:
+        await message.answer(CHAIN_PARSE_ERROR, reply_markup=kb_chain_result())
+        return
+
+    result = calculate_chain(**parsed)
+
+    if len(result) <= 4096:
+        await message.answer(result, reply_markup=kb_chain_result(),
+                             parse_mode="HTML")
+    else:
+        parts = [result[i:i + 4000] for i in range(0, len(result), 4000)]
+        for i, part in enumerate(parts):
+            kb = kb_chain_result() if i == len(parts) - 1 else None
+            await message.answer(part, reply_markup=kb, parse_mode="HTML")
 
 
 @user_router.message(F.text & ~F.text.startswith("/"))
