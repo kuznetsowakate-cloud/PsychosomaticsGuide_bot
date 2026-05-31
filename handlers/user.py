@@ -211,17 +211,15 @@ async def _process_query(message: Message, query: str):
             await message.answer(NO_RESULTS, reply_markup=kb_after_answer())
             return
 
-        # Отправляем ответ (разбиваем если > 4096 символов)
-        # parse_mode=None: ответ Claude — plain text, не HTML
         answer = result.answer
         if len(answer) <= 4096:
             await message.answer(
-                answer, reply_markup=kb_after_answer(), parse_mode=None)
+                answer, reply_markup=kb_after_answer(), parse_mode="HTML")
         else:
             parts = [answer[i:i+4000] for i in range(0, len(answer), 4000)]
             for i, part in enumerate(parts):
                 kb = kb_after_answer() if i == len(parts) - 1 else None
-                await message.answer(part, reply_markup=kb, parse_mode=None)
+                await message.answer(part, reply_markup=kb, parse_mode="HTML")
 
         # Обновляем статистику
         await increment_query_count(telegram_id)
