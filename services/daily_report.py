@@ -1,19 +1,45 @@
 """Ежедневный отчёт для администратора: пользователи, запросы, расходы."""
 
 import asyncio
+import json
 import logging
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
 from supabase import create_client
 
 from config.settings import (
-    ADMIN_IDS, COST_PER_QUERY_RUB, SUPABASE_KEY, SUPABASE_URL,
+    ADMIN_IDS, COST_PER_QUERY_RUB, OPENAI_API_KEY, SUPABASE_KEY, SUPABASE_URL,
 )
 
 logger = logging.getLogger(__name__)
 
 MOSCOW_TZ = timezone(timedelta(hours=3))
 REPORT_HOUR = 9  # 09:00 по Москве
+
+_OPENAI_BALANCE_URL = "https://api.openai.com/v1/organization/balance"
+
+
+def _fetch_openai_balance() -> str:
+    """Запрашивает баланс OpenAI. Работает только с admin/organization ключом."""
+    try:
+        req = urllib.request.Request(
+            _OPENAI_BALANCE_URL,
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        available = (data.get("available") or [{}])[0]
+        amount = available.get("amount", 0)
+        currency = available.get("currency", "usd").upper()
+        return f"${amount:.2f} {currency}"
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            return "⚠️ нет доступа — нужен Organization Admin key"
+        return f"⚠️ ошибка {e.code}"
+    except Exception:
+        return "⚠️ недоступно"
 
 
 def _build_report() -> str:
@@ -96,6 +122,7 @@ def _build_report() -> str:
     date_str = now_msk.strftime("%d.%m.%Y")
 
     users_block = "\n\n".join(user_lines) if user_lines else "Пользователей нет."
+    openai_balance = _fetch_openai_balance()
 
     return (
         f"📊 <b>Статистика за {date_str}</b>\n"
@@ -110,9 +137,10 @@ def _build_report() -> str:
         f"📦 <b>За всё время</b>\n"
         f"Запросов: {total_all} (~{cost_all} ₽)\n"
         f"\n"
-        f"💳 <b>Пополнить баланс API при необходимости:</b>\n"
-        f"• OpenAI: platform.openai.com → Billing\n"
-        f"• Anthropic: console.anthropic.com → Billing"
+        f"💳 <b>Баланс API</b>\n"
+        f"OpenAI: <b>{openai_balance}</b>\n"
+        f"Anthropic: проверить вручную → console.anthropic.com/settings/billing\n"
+        f"<i>(Anthropic не предоставляет API для проверки баланса)</i>"
     )
 
 
