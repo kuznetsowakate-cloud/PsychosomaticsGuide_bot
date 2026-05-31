@@ -49,26 +49,29 @@ async def cmd_admin(message: Message):
 async def cmd_stats(message: Message):
     from supabase import create_client
     from config.settings import SUPABASE_URL, SUPABASE_KEY
+    from services.daily_report import _build_report
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    def _get_stats():
+    # Данные по базе знаний (быстро)
+    def _get_kb_stats():
         sources = sb.table("sources").select("id", count="exact").execute().count
         chunks = sb.table("chunks").select("id", count="exact").execute().count
-        users = sb.table("users").select("telegram_id", count="exact").execute().count
-        queries = sb.table("query_log").select("id", count="exact").execute().count
-        return sources, chunks, users, queries
+        return sources, chunks
 
-    sources_count, chunks_count, users_count, queries_count = (
-        await asyncio.to_thread(_get_stats)
-    )
+    wait_msg = await message.answer("⏳ Собираю статистику...")
+    sources_count, chunks_count = await asyncio.to_thread(_get_kb_stats)
+    report = await asyncio.to_thread(_build_report)
 
-    await message.answer(
-        f"📊 <b>Статистика</b>\n\n"
-        f"📚 Источников: {sources_count}\n"
-        f"🧩 Чанков: {chunks_count}\n"
-        f"👥 Пользователей: {users_count}\n"
-        f"🔍 Запросов всего: {queries_count}"
-    )
+    kb_line = f"📚 Источников: {sources_count} | 🧩 Чанков: {chunks_count}\n\n"
+    full_text = kb_line + report
+
+    await wait_msg.delete()
+    if len(full_text) <= 4096:
+        await message.answer(full_text, parse_mode="HTML")
+    else:
+        parts = [full_text[i:i + 4000] for i in range(0, len(full_text), 4000)]
+        for part in parts:
+            await message.answer(part, parse_mode="HTML")
 
 
 @admin_router.message(Command("resync_empty"))

@@ -38,3 +38,6 @@ PLAN_DAYS = {
     "basic": 30,
     "pro":   30,
 }
+
+# Примерная стоимость одного RAG-запроса (OpenAI embed + Claude Sonnet), ₽
+COST_PER_QUERY_RUB = 2.7

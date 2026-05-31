@@ -55,6 +55,11 @@ async def main():
             "DRIVE_FOLDER_ID не задан — синхронизация с Drive отключена"
         )
 
+    # Ежедневный отчёт администратору в 09:00 МСК
+    from services.daily_report import daily_report_loop
+    report_task = asyncio.create_task(daily_report_loop(bot=bot))
+    logger.info("Ежедневный отчёт запланирован на 09:00 МСК")
+
     try:
         if WEBHOOK_URL:
             await _run_webhook(bot, dp, logger)
@@ -64,6 +69,7 @@ async def main():
     finally:
         if drive_task:
             drive_task.cancel()
+        report_task.cancel()
         await bot.session.close()
 
 
