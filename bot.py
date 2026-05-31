@@ -6,7 +6,8 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from config.settings import BOT_TOKEN
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
+from config.settings import BOT_TOKEN, ADMIN_IDS
 from handlers import user_router, admin_router
 from services.fsm_storage import SupabaseStorage
 
@@ -40,6 +41,7 @@ async def main():
     dp.include_router(admin_router)   # admin первым (проверка ADMIN_IDS)
     dp.include_router(user_router)
 
+    await _set_commands(bot)
     logger.info("PsychosomaticsGuide Bot запущен")
 
     # Запускаем Google Drive синхронизацию если настроена
@@ -63,6 +65,30 @@ async def main():
         if drive_task:
             drive_task.cancel()
         await bot.session.close()
+
+
+async def _set_commands(bot: Bot) -> None:
+    user_commands = [
+        BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="cancel", description="Отменить текущее действие"),
+        BotCommand(command="subscribe", description="Подписка и тарифы"),
+        BotCommand(command="help", description="Как пользоваться"),
+    ]
+    admin_commands = user_commands + [
+        BotCommand(command="admin", description="Панель администратора"),
+        BotCommand(command="stats", description="Статистика базы"),
+        BotCommand(command="sources", description="Список источников"),
+        BotCommand(command="resync_empty", description="Повторная обработка файлов без чанков"),
+    ]
+
+    await bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.set_my_commands(
+                admin_commands, scope=BotCommandScopeChat(chat_id=admin_id)
+            )
+        except Exception:
+            pass
 
 
 async def _run_webhook(
