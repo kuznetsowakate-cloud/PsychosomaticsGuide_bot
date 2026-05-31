@@ -19,6 +19,48 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL") or (
 WEBHOOK_PATH = "/webhook"
 PORT = int(os.getenv("PORT", "8080"))
 
+OLD_BOT_TOKEN = os.getenv("OLD_BOT_TOKEN", "")
+
+OLD_BOT_REDIRECT_TEXT = (
+    "👋 Привет!\n\n"
+    "Бот расчета цепочки переехал в новое место, "
+    "теперь это часть Справочника по психосоматике.\n\n"
+    "🧠 <b>Что умеет новый Справочник по психосоматике:</b>\n\n"
+    "🔍 <b>Умный поиск по психосоматике</b>\n"
+    "Напиши симптом или орган — бот найдёт ответ сразу в нескольких "
+    "источниках и даст структурированный ответ с психологическими "
+    "причинами и рекомендациями. Доступ к большой базе знаний по "
+    "психосоматике у тебя в кармане в любой момент!\n\n"
+    "🔗 <b>Расчёт цепочки</b>\n"
+    "Все как было раньше: введи возраст диагноза, сепарации и клиента — "
+    "получи полный расчёт с параллелями и датами за секунду.\n\n"
+    "👉 Переходи и попробуй прямо сейчас:\n"
+    "@PsychosomaticsGuide_bot"
+)
+
+
+async def _run_redirect_bot() -> None:
+    """Старый бот отвечает на любое сообщение редиректом в новый."""
+    from aiogram.types import Message as TgMessage
+
+    old_bot = Bot(
+        token=OLD_BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    old_dp = Dispatcher()
+
+    @old_dp.message()
+    async def _redirect(msg: TgMessage):
+        await msg.answer(OLD_BOT_REDIRECT_TEXT)
+
+    logger = logging.getLogger("redirect_bot")
+    logger.info("Redirect-бот запущен (старый токен)")
+    await old_bot.delete_webhook(drop_pending_updates=True)
+    try:
+        await old_dp.start_polling(old_bot)
+    finally:
+        await old_bot.session.close()
+
 
 async def main():
     logging.basicConfig(
@@ -60,6 +102,12 @@ async def main():
     report_task = asyncio.create_task(daily_report_loop(bot=bot))
     logger.info("Ежедневный отчёт запланирован на 09:00 МСК")
 
+    # Редирект-бот (старый токен) — отвечает на любое сообщение ссылкой на новый
+    redirect_task = None
+    if OLD_BOT_TOKEN:
+        redirect_task = asyncio.create_task(_run_redirect_bot())
+        logger.info("Redirect-бот запущен (старый токен)")
+
     try:
         if WEBHOOK_URL:
             await _run_webhook(bot, dp, logger)
@@ -69,6 +117,8 @@ async def main():
     finally:
         if drive_task:
             drive_task.cancel()
+        if redirect_task:
+            redirect_task.cancel()
         report_task.cancel()
         await bot.session.close()
 
@@ -76,6 +126,7 @@ async def main():
 async def _set_commands(bot: Bot) -> None:
     user_commands = [
         BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="my_plan", description="Мой тариф и статистика"),
         BotCommand(command="cancel", description="Отменить текущее действие"),
         BotCommand(command="subscribe", description="Подписка и тарифы"),
         BotCommand(command="help", description="Как пользоваться"),

@@ -1,5 +1,6 @@
 import logging
 import traceback
+from datetime import datetime, timezone
 
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -22,6 +23,7 @@ from texts.messages import (
     WELCOME, HELP_TEXT, SEARCH_PROMPT, THINKING,
     LIMIT_REACHED, NO_RESULTS, SUBSCRIBE_TEXT,
     PAYMENT_SUCCESS, CHAIN_PROMPT, CHAIN_PARSE_ERROR, CANCEL_TEXT,
+    MY_PLAN_FREE, MY_PLAN_PAID,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,43 @@ async def cmd_cancel(message: Message, state: FSMContext):
 @user_router.message(Command("help"))
 async def cmd_help(message: Message):
     await message.answer(HELP_TEXT, reply_markup=kb_back())
+
+
+# ── /my_plan ───────────────────────────────────────────────────────────────
+
+@user_router.message(Command("my_plan"))
+async def cmd_my_plan(message: Message):
+    user = await get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username or "",
+        full_name=message.from_user.full_name or "",
+    )
+    await check_query_limit(user)
+
+    plan = user.get("plan", "free")
+    used_today = user.get("queries_today", 0)
+
+    if plan == "free":
+        text = MY_PLAN_FREE.format(used=used_today)
+    else:
+        subscribed_until = user.get("subscribed_until", "")
+        until_str = "—"
+        if subscribed_until:
+            dt = datetime.fromisoformat(subscribed_until)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            until_str = dt.strftime("%d.%m.%Y")
+
+        emoji = "⭐" if plan == "basic" else "🌟"
+        plan_name = "Базовый" if plan == "basic" else "Про"
+        text = MY_PLAN_PAID.format(
+            emoji=emoji,
+            plan_name=plan_name,
+            until=until_str,
+            used=used_today,
+        )
+
+    await message.answer(text, reply_markup=kb_back())
 
 
 # ── /subscribe ─────────────────────────────────────────────────────────────
