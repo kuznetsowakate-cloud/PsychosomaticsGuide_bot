@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import traceback
 
@@ -69,29 +68,40 @@ async def cmd_subscribe(message: Message):
 
 # ── Callbacks: навигация ───────────────────────────────────────────────────
 
+async def _remove_keyboard(callback: CallbackQuery) -> None:
+    """Убираем кнопки у нажатого сообщения, чтобы не было «зависших» клавиатур."""
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
 @user_router.callback_query(F.data == "action_back")
 async def cb_back(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(WELCOME, reply_markup=kb_main_menu())
+    await _remove_keyboard(callback)
+    await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
     await callback.answer()
 
 
 @user_router.callback_query(F.data == "action_help")
 async def cb_help(callback: CallbackQuery):
-    await callback.message.edit_text(HELP_TEXT, reply_markup=kb_back())
+    await _remove_keyboard(callback)
+    await callback.message.answer(HELP_TEXT, reply_markup=kb_back())
     await callback.answer()
 
 
 @user_router.callback_query(F.data == "action_subscribe")
 async def cb_subscribe(callback: CallbackQuery):
-    await callback.message.edit_text(
-        SUBSCRIBE_TEXT, reply_markup=kb_subscribe())
+    await _remove_keyboard(callback)
+    await callback.message.answer(SUBSCRIBE_TEXT, reply_markup=kb_subscribe())
     await callback.answer()
 
 
 @user_router.callback_query(F.data == "action_search")
 async def cb_search(callback: CallbackQuery, state: FSMContext):
     await state.set_state(UserStates.waiting_query)
+    await _remove_keyboard(callback)
     await callback.message.answer(SEARCH_PROMPT)
     await callback.answer()
 
@@ -108,7 +118,7 @@ async def cb_buy(callback: CallbackQuery):
 
     await callback.message.answer_invoice(
         title=f"Подписка {plan_name}",
-        description=f"Безлимитный доступ к справочнику по психосоматике на 30 дней",
+        description="Безлимитный доступ к справочнику по психосоматике на 30 дней",
         payload=f"sub_{plan}",
         currency="XTR",         # Telegram Stars
         prices=[LabeledPrice(label=f"Подписка {plan_name}", amount=stars)],
