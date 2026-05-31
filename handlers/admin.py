@@ -52,10 +52,10 @@ async def cmd_stats(message: Message):
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     def _get_stats():
-        sources = len(sb.table("sources").select("id").execute().data)
-        chunks = len(sb.table("chunks").select("id").execute().data)
-        users = len(sb.table("users").select("telegram_id").execute().data)
-        queries = len(sb.table("query_log").select("id").execute().data)
+        sources = sb.table("sources").select("id", count="exact").execute().count
+        chunks = sb.table("chunks").select("id", count="exact").execute().count
+        users = sb.table("users").select("telegram_id", count="exact").execute().count
+        queries = sb.table("query_log").select("id", count="exact").execute().count
         return sources, chunks, users, queries
 
     sources_count, chunks_count, users_count, queries_count = (

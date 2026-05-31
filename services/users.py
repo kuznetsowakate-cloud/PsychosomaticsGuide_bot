@@ -46,6 +46,24 @@ async def check_query_limit(user: dict) -> tuple[bool, int]:
     Возвращает (можно_делать_запрос, осталось_запросов).
     """
     plan = user.get("plan", "free")
+    subscribed_until = user.get("subscribed_until")
+
+    if plan != "free" and subscribed_until:
+        expiry = datetime.fromisoformat(subscribed_until)
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expiry:
+            plan = "free"
+            tid = user["telegram_id"]
+            await asyncio.to_thread(
+                lambda: supabase.table("users").update({
+                    "plan": "free",
+                    "subscribed_until": None,
+                }).eq("telegram_id", tid).execute()
+            )
+            user["plan"] = "free"
+            logger.info("Подписка истекла для %d, план сброшен на free", tid)
+
     limit = PLAN_LIMITS.get(plan, 3)
 
     reset_date = user.get("queries_reset_at")

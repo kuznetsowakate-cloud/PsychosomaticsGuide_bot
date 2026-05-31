@@ -22,7 +22,7 @@ from config.settings import PLAN_PRICES
 from texts.messages import (
     WELCOME, HELP_TEXT, SEARCH_PROMPT, THINKING,
     LIMIT_REACHED, NO_RESULTS, SUBSCRIBE_TEXT,
-    PAYMENT_SUCCESS, CHAIN_PROMPT, CHAIN_PARSE_ERROR,
+    PAYMENT_SUCCESS, CHAIN_PROMPT, CHAIN_PARSE_ERROR, CANCEL_TEXT,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,12 @@ async def cmd_start(message: Message, state: FSMContext):
 
 
 # ── /help ──────────────────────────────────────────────────────────────────
+
+@user_router.message(Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(CANCEL_TEXT, reply_markup=kb_main_menu())
+
 
 @user_router.message(Command("help"))
 async def cmd_help(message: Message):
