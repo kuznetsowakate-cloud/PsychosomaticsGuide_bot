@@ -1,4 +1,5 @@
 import logging
+import time
 import traceback
 from datetime import datetime, timezone
 
@@ -195,8 +196,8 @@ async def on_payment(message: Message):
 
 @user_router.message(UserStates.waiting_query)
 async def on_search_query(message: Message, state: FSMContext):
-    await state.clear()
-    await _process_query(message, message.text or "")
+    await state.set_state(None)  # очищаем FSM-state, но сохраняем историю диалога
+    await _process_query(message, message.text or "", state)
 
 
 @user_router.callback_query(F.data == "action_chain")
@@ -227,12 +228,14 @@ async def on_chain_input(message: Message, state: FSMContext):
 
 
 @user_router.message(F.text & ~F.text.startswith("/"))
-async def on_plain_text(message: Message):
+async def on_plain_text(message: Message, state: FSMContext):
     """Любой текст без команды — обрабатываем как поисковый запрос."""
-    await _process_query(message, message.text or "")
+    await _process_query(message, message.text or "", state)
 
 
-async def _process_query(message: Message, query: str):
+async def _process_query(
+    message: Message, query: str, state: FSMContext,
+):
     """Проверяем лимит, делаем RAG поиск, отправляем ответ."""
     if not query.strip():
         return
@@ -251,13 +254,19 @@ async def _process_query(message: Message, query: str):
         await message.answer(LIMIT_REACHED, reply_markup=kb_subscribe())
         return
 
+    # Читаем историю диалога из FSM (сбрасываем если прошло > 30 мин)
+    data = await state.get_data()
+    history = []
+    if time.time() - data.get("last_query_at", 0) < 1800:
+        history = data.get("history", [])
+
     # Показываем "Ищу..."
     thinking_msg = await message.answer(THINKING)
     await message.bot.send_chat_action(message.chat.id, "typing")
 
     try:
-        # RAG поиск
-        result = await rag_search(query)
+        # RAG поиск с контекстом диалога
+        result = await rag_search(query, history)
 
         # Удаляем "Ищу..."
         await thinking_msg.delete()
@@ -284,6 +293,13 @@ async def _process_query(message: Message, query: str):
             response=result.answer,
             chunks_used=result.chunks_used,
         )
+
+        # Сохраняем обмен в историю диалога (последние 3)
+        new_history = (history + [{"q": query, "a": result.answer}])[-3:]
+        await state.set_data({
+            "history": new_history,
+            "last_query_at": time.time(),
+        })
 
     except Exception as e:
         logger.error(

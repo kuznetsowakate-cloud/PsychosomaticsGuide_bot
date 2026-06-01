@@ -164,9 +164,28 @@ def build_context(
     return "\n\n---\n\n".join(parts)
 
 
-async def generate_answer(query: str, context: str, sources_line: str) -> str:
+async def generate_answer(
+    query: str,
+    context: str,
+    sources_line: str,
+    history: list[dict] | None = None,
+) -> str:
     """Асинхронный вызов Claude для генерации агрегированного ответа."""
-    prompt = AGGREGATION_PROMPT.format(
+    history_block = ""
+    if history:
+        pairs = []
+        for exchange in history[-2:]:
+            q = exchange.get("q", "")
+            # Обрезаем длинные ответы чтобы не раздувать контекст
+            a = exchange.get("a", "")[:400]
+            pairs.append(f"Пользователь: {q}\nАссистент: {a}…")
+        history_block = (
+            "КОНТЕКСТ ПРЕДЫДУЩЕГО ДИАЛОГА (учитывай при ответе):\n"
+            + "\n\n".join(pairs)
+            + "\n\n"
+        )
+
+    prompt = history_block + AGGREGATION_PROMPT.format(
         query=query,
         context=context,
         sources_line=sources_line,
@@ -186,7 +205,7 @@ async def generate_answer(query: str, context: str, sources_line: str) -> str:
     return message.content[0].text
 
 
-async def rag_search(query: str) -> RAGResponse:
+async def rag_search(query: str, history: list[dict] | None = None) -> RAGResponse:
     """
     Главная функция: принимает запрос, возвращает агрегированный ответ.
     """
@@ -226,7 +245,7 @@ async def rag_search(query: str) -> RAGResponse:
 
     # 6. Генерируем агрегированный ответ через Claude
     logger.info("RAG: генерация ответа через Claude...")
-    answer = await generate_answer(query, context, sources_line)
+    answer = await generate_answer(query, context, sources_line, history)
 
     return RAGResponse(
         answer=answer,
