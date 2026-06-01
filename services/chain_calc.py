@@ -140,11 +140,12 @@ def parse_chain_input(text: str) -> dict | None:
     sep_y, sep_m = extract_ym(sep_text)
     cur_y, cur_m = extract_ym(cur_text)
 
-    if diag_y == 0 and diag_m == 0:
+    # Проверяем что строка вообще содержала цифры (не путаем "не найдено" с "явный 0")
+    if not re.search(r'\d', diag_text):
         return None
-    if sep_y == 0 and sep_m == 0:
+    if not re.search(r'\d', sep_text):
         return None
-    if cur_y == 0 and cur_m == 0:
+    if not re.search(r'\d', cur_text):
         return None
 
     return {
