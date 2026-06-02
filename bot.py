@@ -132,10 +132,10 @@ async def _set_commands(bot: Bot) -> None:
         BotCommand(command="help", description="Как пользоваться"),
     ]
     admin_commands = user_commands + [
-        BotCommand(command="admin", description="Панель администратора"),
-        BotCommand(command="stats", description="Статистика базы"),
-        BotCommand(command="sources", description="Список источников"),
-        BotCommand(command="resync_empty", description="Повторная обработка файлов без чанков"),
+        BotCommand(command="admin", description="Панель администратора (admin)"),
+        BotCommand(command="stats", description="Статистика базы (admin)"),
+        BotCommand(command="sources", description="Список источников (admin)"),
+        BotCommand(command="resync_empty", description="Повторная обработка файлов без чанков (admin)"),
     ]
 
     await bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
