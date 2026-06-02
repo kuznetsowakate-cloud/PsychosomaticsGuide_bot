@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
@@ -52,4 +52,29 @@ def kb_chain_result() -> InlineKeyboardMarkup:
     builder.button(text="🔗 Новый расчёт", callback_data="action_chain")
     builder.button(text="🏠 Меню", callback_data="action_back")
     builder.adjust(2)
+    return builder.as_markup()
+
+
+def kb_terms_accept() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📄 Соглашение", callback_data="terms_show_agreement")
+    builder.button(text="🔒 Политика конфиденциальности", callback_data="terms_show_privacy")
+    builder.button(text="✅ Принимаю и начать", callback_data="terms_accept")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def kb_after_doc() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="← Назад к условиям", callback_data="terms_back")
+    builder.button(text="✅ Принимаю", callback_data="terms_accept")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def kb_delete_confirm() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🗑 Да, удалить мои данные", callback_data="delete_confirm")
+    builder.button(text="← Отмена", callback_data="action_back")
+    builder.adjust(1)
     return builder.as_markup()

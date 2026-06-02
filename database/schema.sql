@@ -151,3 +151,11 @@ as $$
     where c.id = any(chunk_ids)
       and s.is_active = true;
 $$;
+
+-- ============================================================
+-- МИГРАЦИЯ: принятие пользовательского соглашения
+-- Выполнить в Supabase SQL Editor (один раз)
+-- ============================================================
+alter table users
+    add column if not exists terms_accepted    boolean     default false,
+    add column if not exists terms_accepted_at timestamptz;

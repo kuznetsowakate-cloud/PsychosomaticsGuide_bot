@@ -13,7 +13,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 async def get_or_create_user(telegram_id: int, username: str = "",
-                              full_name: str = "") -> dict:
+                             full_name: str = "") -> dict:
     """Получаем или создаём пользователя."""
     def _sync():
         result = supabase.table("users").select("*").eq(
@@ -110,6 +110,16 @@ async def save_query_log(telegram_id: int, query: str,
     await asyncio.to_thread(_sync)
 
 
+async def accept_terms(telegram_id: int) -> None:
+    """Фиксируем дату принятия пользовательского соглашения."""
+    await asyncio.to_thread(
+        lambda: supabase.table("users").update({
+            "terms_accepted": True,
+            "terms_accepted_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("telegram_id", telegram_id).execute()
+    )
+
+
 async def activate_subscription(telegram_id: int, plan: str,
                                 payment_id: str, amount: int) -> None:
     """Активируем подписку пользователя."""
@@ -132,4 +142,6 @@ async def activate_subscription(telegram_id: int, plan: str,
         }).execute()
 
     await asyncio.to_thread(_sync)
-    logger.info("Подписка %s активирована для %d до %s", plan, telegram_id, until)
+    logger.info(
+        "Подписка %s активирована для %d до %s", plan, telegram_id, until
+    )

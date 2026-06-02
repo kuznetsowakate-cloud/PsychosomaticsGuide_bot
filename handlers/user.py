@@ -13,13 +13,14 @@ from aiogram.types import (
 
 from keyboards.inline import (
     kb_main_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
+    kb_terms_accept, kb_after_doc, kb_delete_confirm,
 )
 from services.chain_calc import calculate_chain, parse_chain_input
 from services.rag import rag_search
 from services.users import (
     get_or_create_user, check_query_limit,
     increment_query_count, save_query_log,
-    activate_subscription,
+    activate_subscription, accept_terms,
 )
 from config.settings import PLAN_PRICES, ADMIN_IDS, PROVIDER_TOKEN
 from texts.messages import (
@@ -28,7 +29,9 @@ from texts.messages import (
     PAYMENT_SUCCESS, CHAIN_PROMPT, CHAIN_PARSE_ERROR, CANCEL_TEXT,
     MY_PLAN_FREE, MY_PLAN_PAID,
     FEEDBACK_PROMPT, FEEDBACK_SENT, FEEDBACK_RECEIVED,
+    TERMS_PROMPT, DELETE_PROMPT, DELETE_CONFIRMED, DELETE_ADMIN_NOTIFY,
 )
+from texts.legal import PRIVACY_POLICY, USER_AGREEMENT
 
 logger = logging.getLogger(__name__)
 user_router = Router()
@@ -45,15 +48,18 @@ class UserStates(StatesGroup):
 @user_router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    await get_or_create_user(
+    user = await get_or_create_user(
         telegram_id=message.from_user.id,
         username=message.from_user.username or "",
         full_name=message.from_user.full_name or "",
     )
-    await message.answer(WELCOME, reply_markup=kb_main_menu())
+    if not user.get("terms_accepted"):
+        await message.answer(TERMS_PROMPT, reply_markup=kb_terms_accept())
+    else:
+        await message.answer(WELCOME, reply_markup=kb_main_menu())
 
 
-# ── /help ──────────────────────────────────────────────────────────────────
+# ── /cancel ────────────────────────────────────────────────────────────────
 
 @user_router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext):
@@ -61,9 +67,55 @@ async def cmd_cancel(message: Message, state: FSMContext):
     await message.answer(CANCEL_TEXT, reply_markup=kb_main_menu())
 
 
+# ── /help ──────────────────────────────────────────────────────────────────
+
 @user_router.message(Command("help"))
 async def cmd_help(message: Message):
     await message.answer(HELP_TEXT, reply_markup=kb_back())
+
+
+# ── /legal ─────────────────────────────────────────────────────────────────
+
+@user_router.message(Command("legal"))
+async def cmd_legal(message: Message):
+    await message.answer(USER_AGREEMENT)
+    await message.answer(PRIVACY_POLICY, reply_markup=kb_back())
+
+
+# ── /delete ────────────────────────────────────────────────────────────────
+
+@user_router.message(Command("delete"))
+async def cmd_delete(message: Message):
+    await message.answer(DELETE_PROMPT, reply_markup=kb_delete_confirm())
+
+
+@user_router.callback_query(F.data == "delete_confirm")
+async def cb_delete_confirm(callback: CallbackQuery):
+    user = callback.from_user
+    if user.username:
+        user_info = f"@{user.username} (id: {user.id})"
+    else:
+        name = user.full_name or str(user.id)
+        user_info = f"{name} (id: {user.id})"
+
+    notify = DELETE_ADMIN_NOTIFY.format(
+        user_info=user_info,
+        telegram_id=user.id,
+    )
+    for admin_id in ADMIN_IDS:
+        try:
+            await callback.message.bot.send_message(
+                admin_id, notify, parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.message.answer(DELETE_CONFIRMED)
+    await callback.answer()
 
 
 # ── /my_plan ───────────────────────────────────────────────────────────────
@@ -153,6 +205,51 @@ async def on_feedback(message: Message, state: FSMContext):
     await message.answer(FEEDBACK_SENT, reply_markup=kb_main_menu())
 
 
+# ── Callbacks: принятие соглашения ────────────────────────────────────────
+
+@user_router.callback_query(F.data == "terms_accept")
+async def cb_accept_terms(callback: CallbackQuery):
+    await accept_terms(callback.from_user.id)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
+    await callback.answer("✅ Условия приняты!")
+
+
+@user_router.callback_query(F.data == "terms_show_agreement")
+async def cb_show_agreement(callback: CallbackQuery):
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.message.answer(USER_AGREEMENT, reply_markup=kb_after_doc())
+    await callback.answer()
+
+
+@user_router.callback_query(F.data == "terms_show_privacy")
+async def cb_show_privacy(callback: CallbackQuery):
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.message.answer(
+        PRIVACY_POLICY, reply_markup=kb_after_doc()
+    )
+    await callback.answer()
+
+
+@user_router.callback_query(F.data == "terms_back")
+async def cb_terms_back(callback: CallbackQuery):
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.message.answer(TERMS_PROMPT, reply_markup=kb_terms_accept())
+    await callback.answer()
+
+
 # ── Callbacks: навигация ──────────────────────────────────────────────────
 
 async def _remove_keyboard(callback: CallbackQuery) -> None:
@@ -201,7 +298,7 @@ async def cb_feedback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ── Оплата через Telegram Stars ────────────────────────────────────────────
+# ── Оплата через Telegram Payments (ЮКасса) ───────────────────────────────
 
 @user_router.callback_query(F.data.startswith("buy_"))
 async def cb_buy(callback: CallbackQuery):
@@ -257,7 +354,7 @@ async def on_payment(message: Message):
 
 @user_router.message(UserStates.waiting_query)
 async def on_search_query(message: Message, state: FSMContext):
-    await state.set_state(None)  # очищаем FSM-state, но сохраняем историю диалога
+    await state.set_state(None)  # очищаем FSM-state, но сохраняем историю
     await _process_query(message, message.text or "", state)
 
 
@@ -271,16 +368,29 @@ async def cb_chain(callback: CallbackQuery, state: FSMContext):
 @user_router.message(UserStates.waiting_chain_input)
 async def on_chain_input(message: Message, state: FSMContext):
     await state.clear()
+
+    user = await get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username or "",
+        full_name=message.from_user.full_name or "",
+    )
+    if not user.get("terms_accepted"):
+        await message.answer(TERMS_PROMPT, reply_markup=kb_terms_accept())
+        return
+
     parsed = parse_chain_input(message.text or "")
     if not parsed:
-        await message.answer(CHAIN_PARSE_ERROR, reply_markup=kb_chain_result())
+        await message.answer(
+            CHAIN_PARSE_ERROR, reply_markup=kb_chain_result()
+        )
         return
 
     result = calculate_chain(**parsed)
 
     if len(result) <= 4096:
-        await message.answer(result, reply_markup=kb_chain_result(),
-                             parse_mode="HTML")
+        await message.answer(
+            result, reply_markup=kb_chain_result(), parse_mode="HTML"
+        )
     else:
         parts = [result[i:i + 4000] for i in range(0, len(result), 4000)]
         for i, part in enumerate(parts):
@@ -303,12 +413,16 @@ async def _process_query(
 
     telegram_id = message.from_user.id
 
-    # Проверяем пользователя и лимит
     user = await get_or_create_user(
         telegram_id=telegram_id,
         username=message.from_user.username or "",
         full_name=message.from_user.full_name or "",
     )
+
+    # Проверяем принятие соглашения
+    if not user.get("terms_accepted"):
+        await message.answer(TERMS_PROMPT, reply_markup=kb_terms_accept())
+        return
 
     can_query, remaining = await check_query_limit(user)
     if not can_query:
@@ -321,15 +435,12 @@ async def _process_query(
     if time.time() - data.get("last_query_at", 0) < 1800:
         history = data.get("history", [])
 
-    # Показываем "Ищу..."
     thinking_msg = await message.answer(THINKING)
     await message.bot.send_chat_action(message.chat.id, "typing")
 
     try:
-        # RAG поиск с контекстом диалога
         result = await rag_search(query, history)
 
-        # Удаляем "Ищу..."
         await thinking_msg.delete()
 
         if not result.chunks_used:
@@ -339,14 +450,16 @@ async def _process_query(
         answer = result.answer
         if len(answer) <= 4096:
             await message.answer(
-                answer, reply_markup=kb_after_answer(), parse_mode="HTML")
+                answer, reply_markup=kb_after_answer(), parse_mode="HTML"
+            )
         else:
             parts = [answer[i:i+4000] for i in range(0, len(answer), 4000)]
             for i, part in enumerate(parts):
                 kb = kb_after_answer() if i == len(parts) - 1 else None
-                await message.answer(part, reply_markup=kb, parse_mode="HTML")
+                await message.answer(
+                    part, reply_markup=kb, parse_mode="HTML"
+                )
 
-        # Обновляем статистику
         await increment_query_count(telegram_id)
         await save_query_log(
             telegram_id=telegram_id,
@@ -355,7 +468,6 @@ async def _process_query(
             chunks_used=result.chunks_used,
         )
 
-        # Сохраняем обмен в историю диалога (последние 3)
         new_history = (history + [{"q": query, "a": result.answer}])[-3:]
         await state.set_data({
             "history": new_history,

@@ -134,6 +134,11 @@ async def _set_commands(bot: Bot) -> None:
         BotCommand(command="subscribe", description="Подписка и тарифы"),
         BotCommand(command="feedback", description="Написать разработчику"),
         BotCommand(command="help", description="Как пользоваться"),
+        BotCommand(
+            command="legal",
+            description="Соглашение и политика конфиденциальности",
+        ),
+        BotCommand(command="delete", description="Удалить мои данные"),
     ]
     admin_commands = user_commands + [
         BotCommand(
