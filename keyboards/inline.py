@@ -10,7 +10,10 @@ def kb_main_menu() -> InlineKeyboardMarkup:
     builder.button(text="🔗 Расчёт цепочки", callback_data="action_chain")
     builder.button(text="💳 Подписка", callback_data="action_subscribe")
     builder.button(text="❓ Как пользоваться", callback_data="action_help")
-    builder.button(text="💬 Написать разработчику", callback_data="action_feedback")
+    builder.button(
+        text="💬 Написать разработчику",
+        callback_data="action_feedback",
+    )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -18,11 +21,11 @@ def kb_main_menu() -> InlineKeyboardMarkup:
 def kb_subscribe() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="⭐ Базовый — 150 Stars/мес (безлимит)",
+        text="⭐ Базовый — 249 ₽/мес (безлимит)",
         callback_data="buy_basic",
     )
     builder.button(
-        text="🌟 Про — 300 Stars/мес (приоритет + история)",
+        text="🌟 Про — 299 ₽/мес (безлимит + история)",
         callback_data="buy_pro",
     )
     builder.button(text="← Назад", callback_data="action_back")

@@ -21,7 +21,7 @@ from services.users import (
     increment_query_count, save_query_log,
     activate_subscription,
 )
-from config.settings import PLAN_PRICES, ADMIN_IDS
+from config.settings import PLAN_PRICES, ADMIN_IDS, PROVIDER_TOKEN
 from texts.messages import (
     WELCOME, HELP_TEXT, SEARCH_PROMPT, THINKING,
     LIMIT_REACHED, NO_RESULTS, SUBSCRIBE_TEXT,
@@ -206,7 +206,7 @@ async def cb_feedback(callback: CallbackQuery, state: FSMContext):
 @user_router.callback_query(F.data.startswith("buy_"))
 async def cb_buy(callback: CallbackQuery):
     plan = callback.data[4:]  # 'basic' или 'pro'
-    stars = PLAN_PRICES.get(plan, 150)
+    price_rub = PLAN_PRICES.get(plan, 249)
 
     plan_names = {"basic": "Базовый", "pro": "Про"}
     plan_name = plan_names.get(plan, plan)
@@ -217,8 +217,12 @@ async def cb_buy(callback: CallbackQuery):
             "Безлимитный доступ к справочнику по психосоматике на 30 дней"
         ),
         payload=f"sub_{plan}",
-        currency="XTR",         # Telegram Stars
-        prices=[LabeledPrice(label=f"Подписка {plan_name}", amount=stars)],
+        provider_token=PROVIDER_TOKEN,
+        currency="RUB",
+        prices=[LabeledPrice(
+            label=f"Подписка {plan_name}",
+            amount=price_rub * 100,  # Telegram принимает копейки
+        )],
     )
     await callback.answer()
 
@@ -231,15 +235,15 @@ async def pre_checkout(query: PreCheckoutQuery):
 @user_router.message(F.successful_payment)
 async def on_payment(message: Message):
     payment = message.successful_payment
-    payload = payment.invoice_payload     # 'sub_basic' или 'sub_pro'
+    payload = payment.invoice_payload  # 'sub_basic' или 'sub_pro'
     plan = payload.replace("sub_", "")
-    stars = payment.total_amount
+    amount_rub = payment.total_amount // 100  # копейки → рубли
 
     await activate_subscription(
         telegram_id=message.from_user.id,
         plan=plan,
         payment_id=payment.telegram_payment_charge_id,
-        amount=stars,
+        amount=amount_rub,
     )
 
     plan_names = {"basic": "Базовый ⭐", "pro": "Про 🌟"}

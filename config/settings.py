@@ -28,11 +28,14 @@ PLAN_LIMITS = {
     "pro":   999999,
 }
 
-# Цены на тарифы (Telegram Stars)
+# Цены на тарифы (рубли)
 PLAN_PRICES = {
-    "basic": 150,   # Stars
-    "pro":   300,   # Stars
+    "basic": 249,   # RUB
+    "pro":   299,   # RUB
 }
+
+# Токен платёжного провайдера (ЮКасса, выдаётся через BotFather)
+PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "")
 
 PLAN_DAYS = {
     "basic": 30,
