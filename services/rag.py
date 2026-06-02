@@ -9,8 +9,10 @@ rag.py — RAG поиск по всей базе + агрегированный 
 """
 
 import asyncio
+import hashlib
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import anthropic
 from openai import AsyncOpenAI
@@ -31,6 +33,8 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Параметры поиска
 TOP_K = 15              # сколько чанков берём
 MIN_SIMILARITY = 0.35   # минимальный порог схожести
+
+CACHE_TTL_HOURS = 24    # время жизни кэша
 
 
 @dataclass
@@ -92,10 +96,85 @@ AGGREGATION_PROMPT = """На основе следующих фрагменто�
 ⚠️ <i>Информация носит образовательный характер и не заменяет консультацию специалиста.</i>"""
 
 
+# ── Кэш запросов ──────────────────────────────────────────────────────────
+
+def _query_hash(query: str) -> str:
+    """Нормализуем запрос и возвращаем SHA-256 хэш."""
+    normalized = " ".join(query.lower().split())
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+async def _get_cached(query: str) -> RAGResponse | None:
+    """Ищем свежий кэш (< CACHE_TTL_HOURS). Возвращает None если не найдено."""
+    q_hash = _query_hash(query)
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=CACHE_TTL_HOURS)
+    ).isoformat()
+
+    def _sync():
+        return (
+            supabase.table("query_cache")
+            .select("answer, sources, chunks_used, id")
+            .eq("query_hash", q_hash)
+            .gte("created_at", cutoff)
+            .limit(1)
+            .execute()
+        )
+
+    result = await asyncio.to_thread(_sync)
+    if not result.data:
+        return None
+
+    row = result.data[0]
+
+    # Обновляем счётчик попаданий в фоне (не ждём)
+    row_id = row["id"]
+    asyncio.create_task(_increment_cache_hits(row_id))
+
+    logger.info("RAG: кэш-хит для запроса (hash=%s…)", q_hash[:8])
+    return RAGResponse(
+        answer=row["answer"],
+        sources=row["sources"] or [],
+        chunks_used=row["chunks_used"] or [],
+    )
+
+
+async def _increment_cache_hits(row_id: int) -> None:
+    try:
+        await asyncio.to_thread(
+            lambda: supabase.rpc(
+                "increment_cache_hits", {"cache_id": row_id}
+            ).execute()
+        )
+    except Exception:
+        pass  # счётчик — некритичная операция
+
+
+async def _save_to_cache(query: str, response: RAGResponse) -> None:
+    """Сохраняем результат в кэш. При конфликте хэша — обновляем."""
+    q_hash = _query_hash(query)
+
+    def _sync():
+        supabase.table("query_cache").upsert({
+            "query_hash": q_hash,
+            "query_text": query[:500],
+            "answer": response.answer,
+            "sources": response.sources,
+            "chunks_used": response.chunks_used,
+            "hits": 0,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="query_hash").execute()
+
+    try:
+        await asyncio.to_thread(_sync)
+        logger.info("RAG: ответ сохранён в кэш (hash=%s…)", q_hash[:8])
+    except Exception as e:
+        logger.warning("RAG: не удалось сохранить кэш: %s", e)
+
+
 # ── Основные функции ───────────────────────────────────────────────────────
 
 async def embed_query(query: str) -> list[float]:
-    """Получаем вектор для поискового запроса."""
     response = await openai_client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=query,
@@ -154,7 +233,9 @@ def build_context(
     """Формируем контекст для Claude из найденных чанков."""
     parts = []
     for i, chunk in enumerate(chunks, start=1):
-        source = source_names.get(chunk.source_id, f"Источник {chunk.source_id}")
+        source = source_names.get(
+            chunk.source_id, f"Источник {chunk.source_id}"
+        )
         page = f", стр. {chunk.page_number}" if chunk.page_number else ""
         relevance = f"{chunk.similarity:.0%}"
         parts.append(
@@ -176,7 +257,6 @@ async def generate_answer(
         pairs = []
         for exchange in history[-2:]:
             q = exchange.get("q", "")
-            # Обрезаем длинные ответы чтобы не раздувать контекст
             a = exchange.get("a", "")[:400]
             pairs.append(f"Пользователь: {q}\nАссистент: {a}…")
         history_block = (
@@ -205,10 +285,20 @@ async def generate_answer(
     return message.content[0].text
 
 
-async def rag_search(query: str, history: list[dict] | None = None) -> RAGResponse:
+async def rag_search(
+    query: str, history: list[dict] | None = None,
+) -> RAGResponse:
     """
     Главная функция: принимает запрос, возвращает агрегированный ответ.
+    Кэширует результат для запросов без истории диалога.
     """
+    use_cache = not history  # с историей кэш не применяем — ответ зависит от контекста
+
+    if use_cache:
+        cached = await _get_cached(query)
+        if cached:
+            return cached
+
     # 1. Векторизуем запрос
     logger.info("RAG: векторизация запроса...")
     embedding = await embed_query(query)
@@ -247,8 +337,14 @@ async def rag_search(query: str, history: list[dict] | None = None) -> RAGRespon
     logger.info("RAG: генерация ответа через Claude...")
     answer = await generate_answer(query, context, sources_line, history)
 
-    return RAGResponse(
+    response = RAGResponse(
         answer=answer,
         sources=unique_sources,
         chunks_used=chunk_ids,
     )
+
+    # 7. Сохраняем в кэш (только свежие запросы без истории)
+    if use_cache:
+        asyncio.create_task(_save_to_cache(query, response))
+
+    return response
