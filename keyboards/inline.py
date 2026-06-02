@@ -10,6 +10,7 @@ def kb_main_menu() -> InlineKeyboardMarkup:
     builder.button(text="🔗 Расчёт цепочки", callback_data="action_chain")
     builder.button(text="💳 Подписка", callback_data="action_subscribe")
     builder.button(text="❓ Как пользоваться", callback_data="action_help")
+    builder.button(text="💬 Написать разработчику", callback_data="action_feedback")
     builder.adjust(1)
     return builder.as_markup()
 

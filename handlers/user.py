@@ -7,7 +7,9 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery
+from aiogram.types import (
+    Message, CallbackQuery, LabeledPrice, PreCheckoutQuery,
+)
 
 from keyboards.inline import (
     kb_main_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
@@ -19,12 +21,13 @@ from services.users import (
     increment_query_count, save_query_log,
     activate_subscription,
 )
-from config.settings import PLAN_PRICES
+from config.settings import PLAN_PRICES, ADMIN_IDS
 from texts.messages import (
     WELCOME, HELP_TEXT, SEARCH_PROMPT, THINKING,
     LIMIT_REACHED, NO_RESULTS, SUBSCRIBE_TEXT,
     PAYMENT_SUCCESS, CHAIN_PROMPT, CHAIN_PARSE_ERROR, CANCEL_TEXT,
     MY_PLAN_FREE, MY_PLAN_PAID,
+    FEEDBACK_PROMPT, FEEDBACK_SENT, FEEDBACK_RECEIVED,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,7 @@ user_router = Router()
 class UserStates(StatesGroup):
     waiting_query = State()
     waiting_chain_input = State()
+    waiting_feedback = State()
 
 
 # ── /start ─────────────────────────────────────────────────────────────────
@@ -106,10 +110,53 @@ async def cmd_subscribe(message: Message):
     await message.answer(SUBSCRIBE_TEXT, reply_markup=kb_subscribe())
 
 
-# ── Callbacks: навигация ───────────────────────────────────────────────────
+# ── /chain ──────────────────────────────────────────────────────────────────
+
+@user_router.message(Command("chain"))
+async def cmd_chain(message: Message, state: FSMContext):
+    await state.set_state(UserStates.waiting_chain_input)
+    await message.answer(CHAIN_PROMPT)
+
+
+# ── /feedback ───────────────────────────────────────────────────────────────
+
+@user_router.message(Command("feedback"))
+async def cmd_feedback(message: Message, state: FSMContext):
+    await state.set_state(UserStates.waiting_feedback)
+    await message.answer(FEEDBACK_PROMPT, reply_markup=kb_back())
+
+
+@user_router.message(UserStates.waiting_feedback)
+async def on_feedback(message: Message, state: FSMContext):
+    await state.clear()
+    text = message.text or ""
+    if not text.strip():
+        await message.answer(FEEDBACK_SENT, reply_markup=kb_main_menu())
+        return
+
+    user = message.from_user
+    if user.username:
+        user_info = f"@{user.username} (id: {user.id})"
+    else:
+        name = user.full_name or str(user.id)
+        user_info = f"{name} (id: {user.id})"
+
+    notify = FEEDBACK_RECEIVED.format(user_info=user_info, text=text)
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.bot.send_message(
+                admin_id, notify, parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    await message.answer(FEEDBACK_SENT, reply_markup=kb_main_menu())
+
+
+# ── Callbacks: навигация ──────────────────────────────────────────────────
 
 async def _remove_keyboard(callback: CallbackQuery) -> None:
-    """Убираем кнопки у нажатого сообщения, чтобы не было «зависших» клавиатур."""
+    """Убираем кнопки, чтобы не было «зависших» клавиатур."""
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
@@ -146,6 +193,14 @@ async def cb_search(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@user_router.callback_query(F.data == "action_feedback")
+async def cb_feedback(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(UserStates.waiting_feedback)
+    await _remove_keyboard(callback)
+    await callback.message.answer(FEEDBACK_PROMPT, reply_markup=kb_back())
+    await callback.answer()
+
+
 # ── Оплата через Telegram Stars ────────────────────────────────────────────
 
 @user_router.callback_query(F.data.startswith("buy_"))
@@ -158,7 +213,9 @@ async def cb_buy(callback: CallbackQuery):
 
     await callback.message.answer_invoice(
         title=f"Подписка {plan_name}",
-        description="Безлимитный доступ к справочнику по психосоматике на 30 дней",
+        description=(
+            "Безлимитный доступ к справочнику по психосоматике на 30 дней"
+        ),
         payload=f"sub_{plan}",
         currency="XTR",         # Telegram Stars
         prices=[LabeledPrice(label=f"Подписка {plan_name}", amount=stars)],
@@ -192,7 +249,7 @@ async def on_payment(message: Message):
     )
 
 
-# ── Основной обработчик запросов ───────────────────────────────────────────
+# ── Основной обработчик запросов ──────────────────────────────────────────
 
 @user_router.message(UserStates.waiting_query)
 async def on_search_query(message: Message, state: FSMContext):

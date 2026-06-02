@@ -6,7 +6,9 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
+from aiogram.types import (
+    BotCommand, BotCommandScopeChat, BotCommandScopeDefault,
+)
 from config.settings import BOT_TOKEN, ADMIN_IDS
 from handlers import user_router, admin_router
 from services.fsm_storage import SupabaseStorage
@@ -102,7 +104,7 @@ async def main():
     report_task = asyncio.create_task(daily_report_loop(bot=bot))
     logger.info("Ежедневный отчёт запланирован на 09:00 МСК")
 
-    # Редирект-бот (старый токен) — отвечает на любое сообщение ссылкой на новый
+    # Редирект-бот (старый токен) — отвечает редиректом в новый
     redirect_task = None
     if OLD_BOT_TOKEN:
         redirect_task = asyncio.create_task(_run_redirect_bot())
@@ -127,15 +129,26 @@ async def _set_commands(bot: Bot) -> None:
     user_commands = [
         BotCommand(command="start", description="Главное меню"),
         BotCommand(command="my_plan", description="Мой тариф и статистика"),
+        BotCommand(command="chain", description="Расчёт цепочки"),
         BotCommand(command="cancel", description="Отменить текущее действие"),
         BotCommand(command="subscribe", description="Подписка и тарифы"),
+        BotCommand(command="feedback", description="Написать разработчику"),
         BotCommand(command="help", description="Как пользоваться"),
     ]
     admin_commands = user_commands + [
-        BotCommand(command="admin", description="Панель администратора (admin)"),
+        BotCommand(
+            command="admin",
+            description="Панель администратора (admin)",
+        ),
         BotCommand(command="stats", description="Статистика базы (admin)"),
-        BotCommand(command="sources", description="Список источников (admin)"),
-        BotCommand(command="resync_empty", description="Повторная обработка файлов без чанков (admin)"),
+        BotCommand(
+            command="sources",
+            description="Список источников (admin)",
+        ),
+        BotCommand(
+            command="resync_empty",
+            description="Повторная обработка файлов без чанков (admin)",
+        ),
     ]
 
     await bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
