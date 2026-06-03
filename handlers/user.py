@@ -14,6 +14,7 @@ from aiogram.types import (
 from keyboards.inline import (
     kb_main_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
     kb_terms_accept, kb_after_doc, kb_delete_confirm,
+    kb_after_answer_with_related,
 )
 from services.chain_calc import calculate_chain, parse_chain_input
 from services.rag import rag_search
@@ -398,6 +399,30 @@ async def on_chain_input(message: Message, state: FSMContext):
             await message.answer(part, reply_markup=kb, parse_mode="HTML")
 
 
+@user_router.callback_query(F.data.startswith("related_"))
+async def cb_related_question(callback: CallbackQuery, state: FSMContext):
+    try:
+        idx = int(callback.data.split("_")[1])
+    except (ValueError, IndexError):
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    questions = data.get("related_questions", [])
+
+    if idx >= len(questions):
+        await callback.answer("Вопрос недоступен")
+        return
+
+    question = questions[idx]
+    await _remove_keyboard(callback)
+    await callback.answer()
+    await callback.message.answer(f"🔍 <i>{question}</i>")
+    await _process_query(
+        callback.message, question, state, from_user=callback.from_user,
+    )
+
+
 @user_router.message(F.text & ~F.text.startswith("/"))
 async def on_plain_text(message: Message, state: FSMContext):
     """Любой текст без команды — обрабатываем как поисковый запрос."""
@@ -405,18 +430,19 @@ async def on_plain_text(message: Message, state: FSMContext):
 
 
 async def _process_query(
-    message: Message, query: str, state: FSMContext,
+    message: Message, query: str, state: FSMContext, from_user=None,
 ):
     """Проверяем лимит, делаем RAG поиск, отправляем ответ."""
     if not query.strip():
         return
 
-    telegram_id = message.from_user.id
+    actor = from_user or message.from_user
+    telegram_id = actor.id
 
     user = await get_or_create_user(
         telegram_id=telegram_id,
-        username=message.from_user.username or "",
-        full_name=message.from_user.full_name or "",
+        username=actor.username or "",
+        full_name=actor.full_name or "",
     )
 
     # Проверяем принятие соглашения
@@ -447,17 +473,22 @@ async def _process_query(
             await message.answer(NO_RESULTS, reply_markup=kb_after_answer())
             return
 
+        kb = (
+            kb_after_answer_with_related(result.related_questions)
+            if result.related_questions
+            else kb_after_answer()
+        )
+
         answer = result.answer
         if len(answer) <= 4096:
-            await message.answer(
-                answer, reply_markup=kb_after_answer(), parse_mode="HTML"
-            )
+            await message.answer(answer, reply_markup=kb, parse_mode="HTML")
         else:
             parts = [answer[i:i+4000] for i in range(0, len(answer), 4000)]
             for i, part in enumerate(parts):
-                kb = kb_after_answer() if i == len(parts) - 1 else None
                 await message.answer(
-                    part, reply_markup=kb, parse_mode="HTML"
+                    part,
+                    reply_markup=kb if i == len(parts) - 1 else None,
+                    parse_mode="HTML",
                 )
 
         await increment_query_count(telegram_id)
@@ -472,6 +503,7 @@ async def _process_query(
         await state.set_data({
             "history": new_history,
             "last_query_at": time.time(),
+            "related_questions": result.related_questions,
         })
 
     except Exception as e:

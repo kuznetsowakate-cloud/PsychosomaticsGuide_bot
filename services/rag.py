@@ -11,7 +11,7 @@ rag.py — RAG поиск по всей базе + агрегированный 
 import asyncio
 import hashlib
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import anthropic
@@ -50,8 +50,9 @@ class SearchResult:
 @dataclass
 class RAGResponse:
     answer: str
-    sources: list[str]       # названия источников
-    chunks_used: list[int]   # id чанков
+    sources: list[str]                                    # названия источников
+    chunks_used: list[int]                                # id чанков
+    related_questions: list[str] = field(default_factory=list)  # смежные вопросы
 
 
 # ── Промпт для Claude ──────────────────────────────────────────────────────
@@ -285,6 +286,31 @@ async def generate_answer(
     return message.content[0].text
 
 
+async def generate_related_questions(query: str) -> list[str]:
+    """Генерирует 2-3 смежных вопроса через Claude Haiku (быстро и дёшево)."""
+    try:
+        message = await claude_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Запрос о психосоматике: «{query}»\n\n"
+                    f"Напиши ровно 3 смежных вопроса по теме — кратко (до 60 символов каждый), "
+                    f"на русском, строго по одному на строку, без нумерации и пояснений."
+                ),
+            }],
+        )
+        lines = [
+            ln.strip().lstrip("•-–—*123456789. )")
+            for ln in message.content[0].text.strip().splitlines()
+            if ln.strip()
+        ]
+        return [q for q in lines if len(q) > 5][:3]
+    except Exception:
+        return []
+
+
 async def rag_search(
     query: str, history: list[dict] | None = None,
 ) -> RAGResponse:
@@ -297,6 +323,7 @@ async def rag_search(
     if use_cache:
         cached = await _get_cached(query)
         if cached:
+            cached.related_questions = await generate_related_questions(query)
             return cached
 
     # 1. Векторизуем запрос
@@ -333,14 +360,18 @@ async def rag_search(
     # 5. Строим контекст
     context = build_context(chunks, source_names)
 
-    # 6. Генерируем агрегированный ответ через Claude
+    # 6. Генерируем ответ и смежные вопросы параллельно
     logger.info("RAG: генерация ответа через Claude...")
-    answer = await generate_answer(query, context, sources_line, history)
+    answer, related_questions = await asyncio.gather(
+        generate_answer(query, context, sources_line, history),
+        generate_related_questions(query),
+    )
 
     response = RAGResponse(
         answer=answer,
         sources=unique_sources,
         chunks_used=chunk_ids,
+        related_questions=related_questions,
     )
 
     # 7. Сохраняем в кэш (только свежие запросы без истории)
