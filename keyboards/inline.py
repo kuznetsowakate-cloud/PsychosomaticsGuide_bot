@@ -49,8 +49,7 @@ def kb_after_answer_with_related(questions: list[str]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     n = min(len(questions), 3)
     for i, q in enumerate(questions[:3]):
-        label = q if len(q) <= 60 else q[:57] + "…"
-        builder.button(text=f"💭 {label}", callback_data=f"related_{i}")
+        builder.button(text=f"💭 {q}", callback_data=f"related_{i}")
     builder.button(text="🔍 Новый запрос", callback_data="action_search")
     builder.button(text="🏠 Меню", callback_data="action_back")
     builder.adjust(*([1] * n + [2]))
