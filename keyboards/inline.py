@@ -45,11 +45,21 @@ def kb_after_answer() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def _wrap_button(text: str, width: int = 36) -> str:
+    """Вставляет перенос строки чтобы Telegram не обрезал текст кнопки."""
+    if len(text) <= width:
+        return text
+    pos = text.rfind(" ", 0, width)
+    if pos <= 0:
+        pos = width
+    return text[:pos] + "\n" + text[pos + 1:]
+
+
 def kb_after_answer_with_related(questions: list[str]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     n = min(len(questions), 3)
     for i, q in enumerate(questions[:3]):
-        builder.button(text=f"💭 {q}", callback_data=f"related_{i}")
+        builder.button(text=f"💭 {_wrap_button(q)}", callback_data=f"related_{i}")
     builder.button(text="🔍 Новый запрос", callback_data="action_search")
     builder.button(text="🏠 Меню", callback_data="action_back")
     builder.adjust(*([1] * n + [2]))
