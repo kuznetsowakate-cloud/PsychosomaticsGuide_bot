@@ -69,20 +69,7 @@ def kb_chain_result() -> InlineKeyboardMarkup:
 
 def kb_terms_accept() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="📄 Соглашение", callback_data="terms_show_agreement")
-    builder.button(
-        text="🔒 Политика конфиденциальности",
-        callback_data="terms_show_privacy",
-    )
     builder.button(text="✅ Принимаю и начать", callback_data="terms_accept")
-    builder.adjust(2, 1)
-    return builder.as_markup()
-
-
-def kb_after_doc() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="← Назад к условиям", callback_data="terms_back")
-    builder.button(text="✅ Принимаю", callback_data="terms_accept")
     builder.adjust(1)
     return builder.as_markup()
 

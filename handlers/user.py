@@ -13,8 +13,7 @@ from aiogram.types import (
 
 from keyboards.inline import (
     kb_main_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
-    kb_terms_accept, kb_after_doc, kb_delete_confirm,
-    kb_after_answer_with_related,
+    kb_terms_accept, kb_delete_confirm, kb_after_answer_with_related,
 )
 from services.chain_calc import calculate_chain, parse_chain_input
 from services.rag import rag_search
@@ -32,7 +31,7 @@ from texts.messages import (
     FEEDBACK_PROMPT, FEEDBACK_SENT, FEEDBACK_RECEIVED,
     TERMS_PROMPT, DELETE_PROMPT, DELETE_CONFIRMED, DELETE_ADMIN_NOTIFY,
 )
-from texts.legal import PRIVACY_POLICY, USER_AGREEMENT
+from texts.legal import LEGAL_LINKS_MSG
 
 logger = logging.getLogger(__name__)
 user_router = Router()
@@ -79,8 +78,7 @@ async def cmd_help(message: Message):
 
 @user_router.message(Command("legal"))
 async def cmd_legal(message: Message):
-    await message.answer(USER_AGREEMENT)
-    await message.answer(PRIVACY_POLICY, reply_markup=kb_back())
+    await message.answer(LEGAL_LINKS_MSG, reply_markup=kb_back())
 
 
 # ── /delete ────────────────────────────────────────────────────────────────
@@ -217,38 +215,6 @@ async def cb_accept_terms(callback: CallbackQuery):
         pass
     await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
     await callback.answer("✅ Условия приняты!")
-
-
-@user_router.callback_query(F.data == "terms_show_agreement")
-async def cb_show_agreement(callback: CallbackQuery):
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-    await callback.message.answer(USER_AGREEMENT, reply_markup=kb_after_doc())
-    await callback.answer()
-
-
-@user_router.callback_query(F.data == "terms_show_privacy")
-async def cb_show_privacy(callback: CallbackQuery):
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-    await callback.message.answer(
-        PRIVACY_POLICY, reply_markup=kb_after_doc()
-    )
-    await callback.answer()
-
-
-@user_router.callback_query(F.data == "terms_back")
-async def cb_terms_back(callback: CallbackQuery):
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-    await callback.message.answer(TERMS_PROMPT, reply_markup=kb_terms_accept())
-    await callback.answer()
 
 
 # ── Callbacks: навигация ──────────────────────────────────────────────────
