@@ -128,16 +128,14 @@ async def main():
 async def _set_commands(bot: Bot) -> None:
     user_commands = [
         BotCommand(command="start", description="Главное меню"),
-        BotCommand(command="my_plan", description="Мой тариф и статистика"),
+        BotCommand(
+            command="my_plan",
+            description="Мой тариф и подписка",
+        ),
         BotCommand(command="chain", description="Расчёт цепочки"),
         BotCommand(command="cancel", description="Отменить текущее действие"),
-        BotCommand(command="subscribe", description="Подписка и тарифы"),
         BotCommand(command="feedback", description="Написать разработчику"),
         BotCommand(command="help", description="Как пользоваться"),
-        BotCommand(
-            command="legal",
-            description="Соглашение и политика конфиденциальности",
-        ),
         BotCommand(command="delete", description="Удалить мои данные"),
     ]
     admin_commands = user_commands + [

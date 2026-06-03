@@ -8,7 +8,9 @@ def kb_main_menu() -> InlineKeyboardMarkup:
         text="🔍 Поиск по справочнику", callback_data="action_search"
     )
     builder.button(text="🔗 Расчёт цепочки", callback_data="action_chain")
-    builder.button(text="💳 Подписка", callback_data="action_subscribe")
+    builder.button(
+        text="💳 Тариф и подписка", callback_data="action_subscribe"
+    )
     builder.button(text="❓ Как пользоваться", callback_data="action_help")
     builder.button(
         text="💬 Написать разработчику",

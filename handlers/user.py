@@ -25,13 +25,12 @@ from services.users import (
 from config.settings import PLAN_PRICES, ADMIN_IDS, PROVIDER_TOKEN
 from texts.messages import (
     WELCOME, HELP_TEXT, SEARCH_PROMPT, THINKING,
-    LIMIT_REACHED, NO_RESULTS, SUBSCRIBE_TEXT,
+    LIMIT_REACHED, NO_RESULTS,
     PAYMENT_SUCCESS, CHAIN_PROMPT, CHAIN_PARSE_ERROR, CANCEL_TEXT,
     MY_PLAN_FREE, MY_PLAN_PAID,
     FEEDBACK_PROMPT, FEEDBACK_SENT, FEEDBACK_RECEIVED,
     TERMS_PROMPT, DELETE_PROMPT, DELETE_CONFIRMED, DELETE_ADMIN_NOTIFY,
 )
-from texts.legal import LEGAL_LINKS_MSG
 
 logger = logging.getLogger(__name__)
 user_router = Router()
@@ -74,13 +73,6 @@ async def cmd_help(message: Message):
     await message.answer(HELP_TEXT, reply_markup=kb_back())
 
 
-# ── /legal ─────────────────────────────────────────────────────────────────
-
-@user_router.message(Command("legal"))
-async def cmd_legal(message: Message):
-    await message.answer(LEGAL_LINKS_MSG, reply_markup=kb_back())
-
-
 # ── /delete ────────────────────────────────────────────────────────────────
 
 @user_router.message(Command("delete"))
@@ -117,14 +109,12 @@ async def cb_delete_confirm(callback: CallbackQuery):
     await callback.answer()
 
 
-# ── /my_plan ───────────────────────────────────────────────────────────────
+# ── /my_plan + /subscribe (объединены) ────────────────────────────────────
 
-@user_router.message(Command("my_plan"))
-async def cmd_my_plan(message: Message):
+async def _plan_text(telegram_id: int, username: str, full_name: str) -> str:
+    """Возвращает текст экрана тарифа/подписки для данного пользователя."""
     user = await get_or_create_user(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username or "",
-        full_name=message.from_user.full_name or "",
+        telegram_id=telegram_id, username=username, full_name=full_name,
     )
     await check_query_limit(user)
 
@@ -132,33 +122,31 @@ async def cmd_my_plan(message: Message):
     used_today = user.get("queries_today", 0)
 
     if plan == "free":
-        text = MY_PLAN_FREE.format(used=used_today)
-    else:
-        subscribed_until = user.get("subscribed_until", "")
-        until_str = "—"
-        if subscribed_until:
-            dt = datetime.fromisoformat(subscribed_until)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            until_str = dt.strftime("%d.%m.%Y")
+        return MY_PLAN_FREE.format(used=used_today)
 
-        emoji = "⭐" if plan == "basic" else "🌟"
-        plan_name = "Базовый" if plan == "basic" else "Про"
-        text = MY_PLAN_PAID.format(
-            emoji=emoji,
-            plan_name=plan_name,
-            until=until_str,
-            used=used_today,
-        )
+    subscribed_until = user.get("subscribed_until", "")
+    until_str = "—"
+    if subscribed_until:
+        dt = datetime.fromisoformat(subscribed_until)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        until_str = dt.strftime("%d.%m.%Y")
 
-    await message.answer(text, reply_markup=kb_back())
+    emoji = "⭐" if plan == "basic" else "🌟"
+    plan_name = "Базовый" if plan == "basic" else "Про"
+    return MY_PLAN_PAID.format(
+        emoji=emoji, plan_name=plan_name, until=until_str, used=used_today,
+    )
 
 
-# ── /subscribe ─────────────────────────────────────────────────────────────
-
-@user_router.message(Command("subscribe"))
-async def cmd_subscribe(message: Message):
-    await message.answer(SUBSCRIBE_TEXT, reply_markup=kb_subscribe())
+@user_router.message(Command("my_plan", "subscribe"))
+async def cmd_my_plan(message: Message):
+    text = await _plan_text(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username or "",
+        full_name=message.from_user.full_name or "",
+    )
+    await message.answer(text, reply_markup=kb_subscribe())
 
 
 # ── /chain ──────────────────────────────────────────────────────────────────
@@ -245,7 +233,12 @@ async def cb_help(callback: CallbackQuery):
 @user_router.callback_query(F.data == "action_subscribe")
 async def cb_subscribe(callback: CallbackQuery):
     await _remove_keyboard(callback)
-    await callback.message.answer(SUBSCRIBE_TEXT, reply_markup=kb_subscribe())
+    text = await _plan_text(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+    await callback.message.answer(text, reply_markup=kb_subscribe())
     await callback.answer()
 
 
