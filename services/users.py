@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from supabase import create_client
 
-from config.settings import SUPABASE_URL, SUPABASE_KEY, PLAN_LIMITS, PLAN_DAYS
+from config.settings import SUPABASE_URL, SUPABASE_KEY, PLAN_LIMITS, PLAN_DAYS, ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -45,6 +45,9 @@ async def check_query_limit(user: dict) -> tuple[bool, int]:
     Проверяет лимит запросов.
     Возвращает (можно_делать_запрос, осталось_запросов).
     """
+    if user.get("telegram_id") in ADMIN_IDS:
+        return True, 999999
+
     plan = user.get("plan", "free")
     subscribed_until = user.get("subscribed_until")
 
@@ -122,7 +125,9 @@ async def accept_terms(telegram_id: int) -> None:
         )
         logger.info("accept_terms: done, rows=%s", result.data)
     except Exception as e:
-        logger.warning("accept_terms: timestamp update failed (%s), trying without timestamp", e)
+        logger.warning(
+            "accept_terms: timestamp update failed (%s), trying without timestamp", e
+        )
         result = await asyncio.to_thread(
             lambda: supabase.table("users").update({
                 "terms_accepted": True,
