@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     Message, CallbackQuery, LabeledPrice, PreCheckoutQuery,
+    LinkPreviewOptions,
 )
 
 from keyboards.inline import (
@@ -53,7 +54,10 @@ async def cmd_start(message: Message, state: FSMContext):
         full_name=message.from_user.full_name or "",
     )
     if not user.get("terms_accepted"):
-        await message.answer(TERMS_PROMPT, reply_markup=kb_terms_accept())
+        await message.answer(
+            TERMS_PROMPT, reply_markup=kb_terms_accept(),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
     else:
         await message.answer(WELCOME, reply_markup=kb_main_menu())
 
@@ -196,13 +200,13 @@ async def on_feedback(message: Message, state: FSMContext):
 
 @user_router.callback_query(F.data == "terms_accept")
 async def cb_accept_terms(callback: CallbackQuery):
+    await callback.answer("✅ Условия приняты!")
     await accept_terms(callback.from_user.id)
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
     await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
-    await callback.answer("✅ Условия приняты!")
 
 
 # ── Callbacks: навигация ──────────────────────────────────────────────────
@@ -335,7 +339,10 @@ async def on_chain_input(message: Message, state: FSMContext):
         full_name=message.from_user.full_name or "",
     )
     if not user.get("terms_accepted"):
-        await message.answer(TERMS_PROMPT, reply_markup=kb_terms_accept())
+        await message.answer(
+            TERMS_PROMPT, reply_markup=kb_terms_accept(),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
         return
 
     parsed = parse_chain_input(message.text or "")
@@ -406,7 +413,10 @@ async def _process_query(
 
     # Проверяем принятие соглашения
     if not user.get("terms_accepted"):
-        await message.answer(TERMS_PROMPT, reply_markup=kb_terms_accept())
+        await message.answer(
+            TERMS_PROMPT, reply_markup=kb_terms_accept(),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
         return
 
     can_query, remaining = await check_query_limit(user)
