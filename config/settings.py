@@ -31,7 +31,6 @@ PLAN_LIMITS = {
 # Цены на тарифы (рубли)
 PLAN_PRICES = {
     "basic": 249,   # RUB
-    "pro":   299,   # RUB
 }
 
 # Токен платёжного провайдера (ЮКасса, выдаётся через BotFather)
@@ -39,7 +38,6 @@ PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "")
 
 PLAN_DAYS = {
     "basic": 30,
-    "pro":   30,
 }
 
 # Примерная стоимость одного RAG-запроса (OpenAI embed + Claude Sonnet), ₽

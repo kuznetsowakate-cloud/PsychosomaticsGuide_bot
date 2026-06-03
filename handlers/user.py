@@ -136,11 +136,7 @@ async def _plan_text(telegram_id: int, username: str, full_name: str) -> str:
             dt = dt.replace(tzinfo=timezone.utc)
         until_str = dt.strftime("%d.%m.%Y")
 
-    emoji = "⭐" if plan == "basic" else "🌟"
-    plan_name = "Базовый" if plan == "basic" else "Про"
-    return MY_PLAN_PAID.format(
-        emoji=emoji, plan_name=plan_name, until=until_str, used=used_today,
-    )
+    return MY_PLAN_PAID.format(until=until_str, used=used_today)
 
 
 @user_router.message(Command("my_plan", "subscribe"))
@@ -269,7 +265,7 @@ async def cb_buy(callback: CallbackQuery):
     plan = callback.data[4:]  # 'basic' или 'pro'
     price_rub = PLAN_PRICES.get(plan, 249)
 
-    plan_names = {"basic": "Базовый", "pro": "Про"}
+    plan_names = {"basic": "Pro"}
     plan_name = plan_names.get(plan, plan)
 
     await callback.message.answer_invoice(
@@ -307,7 +303,7 @@ async def on_payment(message: Message):
         amount=amount_rub,
     )
 
-    plan_names = {"basic": "Базовый ⭐", "pro": "Про 🌟"}
+    plan_names = {"basic": "Pro 🌟"}
     await message.answer(
         PAYMENT_SUCCESS.format(plan=plan_names.get(plan, plan)),
         reply_markup=kb_main_menu(),
