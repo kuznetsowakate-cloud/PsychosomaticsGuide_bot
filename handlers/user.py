@@ -195,9 +195,18 @@ async def on_feedback(message: Message, state: FSMContext):
 # ── Callbacks: принятие соглашения ────────────────────────────────────────
 
 @user_router.callback_query(F.data == "terms_accept")
-async def cb_accept_terms(callback: CallbackQuery):
+async def cb_accept_terms(callback: CallbackQuery, state: FSMContext):
     await callback.answer("✅ Условия приняты!")
-    await accept_terms(callback.from_user.id)
+    try:
+        await accept_terms(callback.from_user.id)
+    except Exception as e:
+        logger.error("accept_terms failed for %d: %s", callback.from_user.id, e)
+        await callback.message.answer(
+            "⚠️ Не удалось сохранить согласие. Нажмите кнопку ещё раз.",
+            reply_markup=kb_terms_accept(),
+        )
+        return
+    await state.clear()
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
