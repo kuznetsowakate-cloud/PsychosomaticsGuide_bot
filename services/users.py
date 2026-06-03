@@ -111,15 +111,24 @@ async def save_query_log(telegram_id: int, query: str,
 
 
 async def accept_terms(telegram_id: int) -> None:
-    """Фиксируем дату принятия пользовательского соглашения."""
+    """Фиксируем принятие пользовательского соглашения."""
     logger.info("accept_terms: saving for telegram_id=%d", telegram_id)
-    result = await asyncio.to_thread(
-        lambda: supabase.table("users").update({
-            "terms_accepted": True,
-            "terms_accepted_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("telegram_id", telegram_id).execute()
-    )
-    logger.info("accept_terms: done, rows affected=%s", result.data)
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase.table("users").update({
+                "terms_accepted": True,
+                "terms_accepted_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("telegram_id", telegram_id).execute()
+        )
+        logger.info("accept_terms: done, rows=%s", result.data)
+    except Exception as e:
+        logger.warning("accept_terms: timestamp update failed (%s), trying without timestamp", e)
+        result = await asyncio.to_thread(
+            lambda: supabase.table("users").update({
+                "terms_accepted": True,
+            }).eq("telegram_id", telegram_id).execute()
+        )
+        logger.info("accept_terms: fallback done, rows=%s", result.data)
 
 
 async def activate_subscription(telegram_id: int, plan: str,
