@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 import traceback
@@ -346,6 +347,29 @@ async def cb_buy(callback: CallbackQuery):
     plan_names = {"pro": "Pro"}
     plan_name = plan_names.get(plan, plan)
 
+    # YooKassa требует данные чека (фискализация).
+    # need_email + send_email_to_provider: Telegram сам запрашивает email у плательщика.
+    # vat_code=1 — без НДС; tax_system_code=2 — УСН (доходы).
+    # Уточните эти коды у своего бухгалтера если система налогообложения другая.
+    provider_data = json.dumps({
+        "receipt": {
+            "items": [
+                {
+                    "description": f"Подписка {plan_name} на 30 дней",
+                    "quantity": "1.00",
+                    "amount": {
+                        "value": f"{price_rub}.00",
+                        "currency": "RUB",
+                    },
+                    "vat_code": 1,
+                    "payment_mode": "full_payment",
+                    "payment_subject": "service",
+                }
+            ],
+            "tax_system_code": 2,
+        }
+    }, ensure_ascii=False)
+
     await callback.message.answer_invoice(
         title=f"Подписка {plan_name}",
         description=(
@@ -358,6 +382,9 @@ async def cb_buy(callback: CallbackQuery):
             label=f"Подписка {plan_name}",
             amount=price_rub * 100,  # Telegram принимает копейки
         )],
+        need_email=True,
+        send_email_to_provider=True,
+        provider_data=provider_data,
     )
     await callback.answer()
 
