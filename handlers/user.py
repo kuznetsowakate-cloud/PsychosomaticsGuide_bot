@@ -160,7 +160,7 @@ async def cmd_chain(message: Message, state: FSMContext):
 # ── /promo ──────────────────────────────────────────────────────────────────
 
 @user_router.message(Command("promo"))
-async def cmd_promo(message: Message):
+async def cmd_promo(message: Message, state: FSMContext):
     args = message.text.split()[1:]
     if not args:
         await message.answer(
@@ -175,6 +175,7 @@ async def cmd_promo(message: Message):
         full_name=message.from_user.full_name or "",
     )
     if not user.get("terms_accepted"):
+        await state.set_data({"pending_promo": code})
         await message.answer(
             TERMS_PROMPT, reply_markup=kb_terms_accept(),
             link_preview_options=LinkPreviewOptions(is_disabled=True),
@@ -250,12 +251,36 @@ async def cb_accept_terms(callback: CallbackQuery, state: FSMContext):
             reply_markup=kb_terms_accept(),
         )
         return
+
+    data = await state.get_data()
+    pending_promo = data.get("pending_promo")
     await state.clear()
+
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
+
+    if pending_promo:
+        result = await use_promo_code(callback.from_user.id, pending_promo)
+        if result["ok"]:
+            await callback.message.answer(
+                f"🎉 <b>Промокод активирован!</b>\n\n"
+                f"Тариф: <b>Pro 🌟</b>\n"
+                f"Срок: <b>{result['days']} дней</b>\n\n"
+                f"Теперь у вас безлимитный доступ к справочнику!",
+                reply_markup=kb_main_menu(),
+            )
+        else:
+            await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
+            error_text = (
+                "❌ Промокод не найден."
+                if result["error"] == "not_found"
+                else "❌ Этот промокод уже был использован."
+            )
+            await callback.message.answer(error_text)
+    else:
+        await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
 
 
 # ── Callbacks: навигация ──────────────────────────────────────────────────
