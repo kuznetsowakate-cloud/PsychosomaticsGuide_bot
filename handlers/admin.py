@@ -214,11 +214,25 @@ async def cmd_delete_promo(message: Message):
         lambda: sb.table("promo_codes").delete().eq("code", code).execute()
     )
 
-    status = "использован" if promo["is_used"] else "не использован"
-    await message.answer(
-        f"🗑 Промокод <code>{code}</code> удалён.\n"
-        f"Статус на момент удаления: {status}"
-    )
+    revoked_user_id = None
+    if promo["is_used"] and promo.get("used_by"):
+        revoked_user_id = promo["used_by"]
+        await asyncio.to_thread(
+            lambda: sb.table("users").update({
+                "plan": "free",
+                "subscribed_until": None,
+            }).eq("telegram_id", revoked_user_id).execute()
+        )
+
+    if revoked_user_id:
+        await message.answer(
+            f"🗑 Промокод <code>{code}</code> удалён.\n"
+            f"Подписка пользователя id:{revoked_user_id} деактивирована."
+        )
+    else:
+        await message.answer(
+            f"🗑 Промокод <code>{code}</code> удалён (не был использован)."
+        )
 
 
 @admin_router.message(Command("promo_list"))
