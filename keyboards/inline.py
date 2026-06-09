@@ -24,7 +24,7 @@ def kb_subscribe() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text="🌟 Pro — 249 ₽/мес (безлимит)",
-        callback_data="buy_basic",
+        callback_data="buy_pro",
     )
     builder.button(text="← Назад", callback_data="action_back")
     builder.adjust(1)

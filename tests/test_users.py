@@ -37,8 +37,8 @@ def test_free_plan_over_limit():
     assert remaining == 0
 
 
-def test_basic_plan_high_limit():
-    can, remaining = run(check_query_limit(_user(plan="basic", used=100)))
+def test_pro_plan_high_limit():
+    can, remaining = run(check_query_limit(_user(plan="pro", used=100)))
     assert can is True
 
 

@@ -140,16 +140,16 @@ async def cmd_create_promo(message: Message):
     if len(args) != 3:
         await message.answer(
             "❌ Формат: <code>/create_promo КОД ПЛАН ДНИ</code>\n"
-            "Пример: <code>/create_promo GIFT123 basic 30</code>\n\n"
-            "Доступные планы: <code>basic</code>"
+            "Пример: <code>/create_promo GIFT123 pro 30</code>\n\n"
+            "Доступные планы: <code>pro</code>"
         )
         return
 
     code, plan, days_str = args
-    if plan not in {"basic"}:
+    if plan not in {"pro"}:
         await message.answer(
             f"❌ Неизвестный план: <code>{plan}</code>\n"
-            f"Доступные: <code>basic</code>"
+            f"Доступные: <code>pro</code>"
         )
         return
 

@@ -88,7 +88,7 @@ def _build_report() -> str:
         if plan == "free":
             plan_str = "🆓"
         else:
-            emoji = "⭐" if plan == "basic" else "🌟"
+            emoji = "🌟"
             if subscribed_until:
                 until_dt = datetime.fromisoformat(subscribed_until)
                 plan_str = f"{emoji}{until_dt.strftime('%d.%m')}"

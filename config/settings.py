@@ -23,21 +23,20 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 # Лимиты по тарифам (запросов в день)
 PLAN_LIMITS = {
-    "free":  3,
-    "basic": 999999,
-    "pro":   999999,
+    "free": 3,
+    "pro":  999999,
 }
 
 # Цены на тарифы (рубли)
 PLAN_PRICES = {
-    "basic": 249,   # RUB
+    "pro": 249,   # RUB
 }
 
 # Токен платёжного провайдера (ЮКасса, выдаётся через BotFather)
 PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "")
 
 PLAN_DAYS = {
-    "basic": 30,
+    "pro": 30,
 }
 
 # Примерная стоимость одного RAG-запроса (OpenAI embed + Claude Sonnet), ₽

@@ -343,7 +343,7 @@ async def cb_buy(callback: CallbackQuery):
     plan = callback.data[4:]  # 'basic' или 'pro'
     price_rub = PLAN_PRICES.get(plan, 249)
 
-    plan_names = {"basic": "Pro"}
+    plan_names = {"pro": "Pro"}
     plan_name = plan_names.get(plan, plan)
 
     await callback.message.answer_invoice(
@@ -381,7 +381,7 @@ async def on_payment(message: Message):
         amount=amount_rub,
     )
 
-    plan_names = {"basic": "Pro 🌟"}
+    plan_names = {"pro": "Pro 🌟"}
     await message.answer(
         PAYMENT_SUCCESS.format(plan=plan_names.get(plan, plan)),
         reply_markup=kb_main_menu(),
