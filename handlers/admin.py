@@ -186,6 +186,41 @@ async def cmd_create_promo(message: Message):
     )
 
 
+@admin_router.message(Command("delete_promo"))
+async def cmd_delete_promo(message: Message):
+    """/delete_promo <код> — удалить промокод."""
+    args = message.text.split()[1:]
+    if not args:
+        await message.answer(
+            "❌ Формат: <code>/delete_promo КОД</code>\n"
+            "Пример: <code>/delete_promo GIFT123</code>"
+        )
+        return
+
+    code = args[0].strip().upper()
+    from supabase import create_client
+    from config.settings import SUPABASE_URL, SUPABASE_KEY
+    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    result = await asyncio.to_thread(
+        lambda: sb.table("promo_codes").select("*").eq("code", code).execute()
+    )
+    if not result.data:
+        await message.answer(f"❌ Промокод <code>{code}</code> не найден.")
+        return
+
+    promo = result.data[0]
+    await asyncio.to_thread(
+        lambda: sb.table("promo_codes").delete().eq("code", code).execute()
+    )
+
+    status = "использован" if promo["is_used"] else "не использован"
+    await message.answer(
+        f"🗑 Промокод <code>{code}</code> удалён.\n"
+        f"Статус на момент удаления: {status}"
+    )
+
+
 @admin_router.message(Command("promo_list"))
 async def cmd_promo_list(message: Message):
     """Список всех промокодов."""

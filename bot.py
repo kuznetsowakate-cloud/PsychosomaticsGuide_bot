@@ -161,6 +161,10 @@ async def _set_commands(bot: Bot) -> None:
             command="promo_list",
             description="Список промокодов (admin)",
         ),
+        BotCommand(
+            command="delete_promo",
+            description="Удалить промокод (admin)",
+        ),
     ]
 
     await bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
