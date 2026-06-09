@@ -21,7 +21,7 @@ from services.rag import rag_search
 from services.users import (
     get_or_create_user, check_query_limit,
     increment_query_count, save_query_log,
-    activate_subscription, accept_terms,
+    activate_subscription, accept_terms, use_promo_code,
 )
 from config.settings import PLAN_PRICES, ADMIN_IDS, PROVIDER_TOKEN
 from texts.messages import (
@@ -155,6 +155,50 @@ async def cmd_my_plan(message: Message):
 async def cmd_chain(message: Message, state: FSMContext):
     await state.set_state(UserStates.waiting_chain_input)
     await message.answer(CHAIN_PROMPT)
+
+
+# ── /promo ──────────────────────────────────────────────────────────────────
+
+@user_router.message(Command("promo"))
+async def cmd_promo(message: Message):
+    args = message.text.split()[1:]
+    if not args:
+        await message.answer(
+            "🎟 Введите промокод:\n<code>/promo ВАШ_КОД</code>"
+        )
+        return
+
+    code = args[0].strip()
+    user = await get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username or "",
+        full_name=message.from_user.full_name or "",
+    )
+    if not user.get("terms_accepted"):
+        await message.answer(
+            TERMS_PROMPT, reply_markup=kb_terms_accept(),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+        return
+
+    result = await use_promo_code(message.from_user.id, code)
+
+    if not result["ok"]:
+        if result["error"] == "not_found":
+            await message.answer(
+                "❌ Промокод не найден. Проверьте правильность ввода."
+            )
+        else:
+            await message.answer("❌ Этот промокод уже был использован.")
+        return
+
+    await message.answer(
+        f"🎉 <b>Промокод активирован!</b>\n\n"
+        f"Тариф: <b>Pro 🌟</b>\n"
+        f"Срок: <b>{result['days']} дней</b>\n\n"
+        f"Теперь у вас безлимитный доступ к справочнику!",
+        reply_markup=kb_main_menu(),
+    )
 
 
 # ── /feedback ───────────────────────────────────────────────────────────────

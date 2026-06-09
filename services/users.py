@@ -137,10 +137,11 @@ async def accept_terms(telegram_id: int) -> None:
 
 
 async def activate_subscription(telegram_id: int, plan: str,
-                                payment_id: str, amount: int) -> None:
+                                payment_id: str, amount: int,
+                                days: int | None = None) -> None:
     """Активируем подписку пользователя."""
-    days = PLAN_DAYS.get(plan, 30)
-    until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    _days = days if days is not None else PLAN_DAYS.get(plan, 30)
+    until = (datetime.now(timezone.utc) + timedelta(days=_days)).isoformat()
 
     def _sync():
         supabase.table("users").update({
@@ -161,3 +162,63 @@ async def activate_subscription(telegram_id: int, plan: str,
     logger.info(
         "Подписка %s активирована для %d до %s", plan, telegram_id, until
     )
+
+
+async def create_promo_code(
+    code: str, plan: str, days: int, created_by: int,
+) -> None:
+    """Создаём промокод (только для администратора)."""
+    await asyncio.to_thread(
+        lambda: supabase.table("promo_codes").insert({
+            "code": code.upper(),
+            "plan": plan,
+            "days": days,
+            "created_by": created_by,
+        }).execute()
+    )
+
+
+async def use_promo_code(telegram_id: int, code: str) -> dict:
+    """
+    Применяем промокод.
+    Возвращает {"ok": True, "plan": str, "days": int}
+    или {"ok": False, "error": "not_found" | "already_used"}.
+    """
+    def _sync():
+        result = supabase.table("promo_codes").select("*").eq(
+            "code", code.upper()
+        ).execute()
+        if not result.data:
+            return {"ok": False, "error": "not_found"}
+        promo = result.data[0]
+        if promo["is_used"]:
+            return {"ok": False, "error": "already_used"}
+        supabase.table("promo_codes").update({
+            "is_used": True,
+            "used_by": telegram_id,
+            "used_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", promo["id"]).execute()
+        return {"ok": True, "plan": promo["plan"], "days": promo["days"]}
+
+    result = await asyncio.to_thread(_sync)
+    if not result["ok"]:
+        return result
+
+    await activate_subscription(
+        telegram_id=telegram_id,
+        plan=result["plan"],
+        payment_id=f"promo_{code.upper()}",
+        amount=0,
+        days=result["days"],
+    )
+    return result
+
+
+async def list_promo_codes() -> list[dict]:
+    """Возвращает все промокоды для отображения в /promo_list."""
+    result = await asyncio.to_thread(
+        lambda: supabase.table("promo_codes").select("*").order(
+            "created_at", desc=True
+        ).execute()
+    )
+    return result.data or []

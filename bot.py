@@ -134,6 +134,7 @@ async def _set_commands(bot: Bot) -> None:
         ),
         BotCommand(command="chain", description="Расчёт цепочки"),
         BotCommand(command="cancel", description="Отменить текущее действие"),
+        BotCommand(command="promo", description="Активировать промокод"),
         BotCommand(command="feedback", description="Написать разработчику"),
         BotCommand(command="help", description="Как пользоваться"),
         BotCommand(command="delete", description="Удалить мои данные"),
@@ -151,6 +152,14 @@ async def _set_commands(bot: Bot) -> None:
         BotCommand(
             command="resync_empty",
             description="Повторная обработка файлов без чанков (admin)",
+        ),
+        BotCommand(
+            command="create_promo",
+            description="Создать промокод (admin)",
+        ),
+        BotCommand(
+            command="promo_list",
+            description="Список промокодов (admin)",
         ),
     ]
 

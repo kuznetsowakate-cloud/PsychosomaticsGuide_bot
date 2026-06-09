@@ -132,6 +132,85 @@ async def cmd_resync_empty(message: Message):
     )
 
 
+@admin_router.message(Command("create_promo"))
+async def cmd_create_promo(message: Message):
+    """/create_promo <код> <план> <дней> — создать промокод."""
+    from services.users import create_promo_code
+    args = message.text.split()[1:]
+    if len(args) != 3:
+        await message.answer(
+            "❌ Формат: <code>/create_promo КОД ПЛАН ДНИ</code>\n"
+            "Пример: <code>/create_promo GIFT123 basic 30</code>\n\n"
+            "Доступные планы: <code>basic</code>"
+        )
+        return
+
+    code, plan, days_str = args
+    if plan not in {"basic"}:
+        await message.answer(
+            f"❌ Неизвестный план: <code>{plan}</code>\n"
+            f"Доступные: <code>basic</code>"
+        )
+        return
+
+    try:
+        days = int(days_str)
+        if days <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer(
+            "❌ Количество дней должно быть положительным числом."
+        )
+        return
+
+    try:
+        await create_promo_code(
+            code=code, plan=plan, days=days,
+            created_by=message.from_user.id,
+        )
+    except Exception as e:
+        err = str(e).lower()
+        if "unique" in err or "duplicate" in err:
+            await message.answer(
+                f"❌ Промокод <code>{code.upper()}</code> уже существует."
+            )
+        else:
+            await message.answer(f"❌ Ошибка: {e}")
+        return
+
+    await message.answer(
+        f"✅ <b>Промокод создан</b>\n\n"
+        f"Код: <code>{code.upper()}</code>\n"
+        f"Тариф: Pro 🌟\n"
+        f"Срок: {days} дней"
+    )
+
+
+@admin_router.message(Command("promo_list"))
+async def cmd_promo_list(message: Message):
+    """Список всех промокодов."""
+    from services.users import list_promo_codes
+    promos = await list_promo_codes()
+
+    if not promos:
+        await message.answer("Промокодов ещё нет.")
+        return
+
+    lines = []
+    for p in promos:
+        status = "✅ использован" if p["is_used"] else "🟢 активен"
+        used_info = (
+            f" → id:{p['used_by']}" if p["is_used"] and p.get("used_by")
+            else ""
+        )
+        lines.append(
+            f"<code>{p['code']}</code> | "
+            f"{p['plan']} {p['days']}д | {status}{used_info}"
+        )
+
+    await message.answer("🎟 <b>Промокоды</b>\n\n" + "\n".join(lines))
+
+
 @admin_router.message(Command("sources"))
 async def cmd_sources(message: Message):
     from supabase import create_client
