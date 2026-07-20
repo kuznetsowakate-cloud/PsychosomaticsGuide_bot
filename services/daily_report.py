@@ -16,21 +16,46 @@ MOSCOW_TZ = timezone(timedelta(hours=3))
 REPORT_HOUR = 9  # 09:00 по Москве
 
 
+def _nick(telegram_id: int, info: dict) -> str:
+    if info.get("username"):
+        return f"@{info['username']}"
+    return info.get("full_name") or f"id:{telegram_id}"
+
+
+def _plan_str(info: dict) -> str:
+    plan = info.get("plan", "free")
+    if plan == "free":
+        return "🆓"
+    subscribed_until = info.get("subscribed_until")
+    if subscribed_until:
+        until_dt = datetime.fromisoformat(subscribed_until)
+        return f"🌟{until_dt.strftime('%d.%m')}"
+    return "🌟"
+
+
 def _build_report() -> str:
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     now_msk = datetime.now(MOSCOW_TZ)
 
-    # Начало сегодняшнего дня по МСК в UTC для фильтрации query_log
+    # Начало сегодняшнего дня по МСК в UTC для фильтрации query_log/payments
     today_start = now_msk.replace(
         hour=0, minute=0, second=0, microsecond=0
     ).astimezone(timezone.utc).isoformat()
 
-    users = (
-        sb.table("users")
-        .select("telegram_id, username, full_name, plan, subscribed_until, queries_today")
-        .order("created_at")
-        .execute()
-        .data
+    # Общие счётчики — только count, без выгрузки всех строк
+    total_users = (
+        sb.table("users").select("telegram_id", count="exact")
+        .limit(1).execute().count or 0
+    )
+    paid_users = (
+        sb.table("users").select("telegram_id", count="exact")
+        .neq("plan", "free").limit(1).execute().count or 0
+    )
+    free_users = total_users - paid_users
+
+    total_all = (
+        sb.table("query_log").select("id", count="exact")
+        .limit(1).execute().count or 0
     )
 
     # Запросы за сегодня (точно, из лога)
@@ -46,68 +71,88 @@ def _build_report() -> str:
         tid = row["telegram_id"]
         today_per_user[tid] = today_per_user.get(tid, 0) + 1
 
-    # Всего запросов за всё время
-    all_log = (
-        sb.table("query_log")
-        .select("telegram_id", count="exact")
-        .execute()
-    )
-    total_all = all_log.count or 0
-
-    all_per_user: dict[int, int] = {}
-    for row in (all_log.data or []):
-        tid = row["telegram_id"]
-        all_per_user[tid] = all_per_user.get(tid, 0) + 1
-
     total_today = sum(today_per_user.values())
     cost_today = round(total_today * COST_PER_QUERY_RUB, 1)
     cost_all = round(total_all * COST_PER_QUERY_RUB, 1)
     date_str = now_msk.strftime("%d.%m.%Y")
 
-    paid_count = sum(1 for u in users if u.get("plan", "free") != "free")
-    free_count = len(users) - paid_count
+    # Подтягиваем инфо только по тем, кто сегодня пользовался ботом
+    active_ids = list(today_per_user.keys())
+    users_info: dict[int, dict] = {}
+    if active_ids:
+        rows = (
+            sb.table("users")
+            .select("telegram_id, username, full_name, plan, subscribed_until")
+            .in_("telegram_id", active_ids)
+            .execute()
+            .data
+        )
+        users_info = {u["telegram_id"]: u for u in rows}
 
-    # Сортируем: сначала активные сегодня, потом по всем запросам
-    sorted_users = sorted(
-        users,
-        key=lambda u: (
-            -today_per_user.get(u["telegram_id"], 0),
-            -all_per_user.get(u["telegram_id"], 0),
-        ),
+    active_sorted = sorted(active_ids, key=lambda tid: -today_per_user[tid])
+    if active_sorted:
+        active_block = "\n".join(
+            f"{_nick(tid, users_info.get(tid, {}))} | "
+            f"{_plan_str(users_info.get(tid, {}))} | "
+            f"{today_per_user[tid]} зап."
+            for tid in active_sorted
+        )
+    else:
+        active_block = "Сегодня никто не пользовался ботом."
+
+    # Реальные (не промо) платежи за сутки
+    payments_today = (
+        sb.table("payments")
+        .select("telegram_id, plan, amount, paid_at")
+        .eq("status", "paid")
+        .gt("amount", 0)
+        .gte("paid_at", today_start)
+        .order("paid_at")
+        .execute()
+        .data
     )
 
-    user_lines: list[str] = []
-    for u in sorted_users:
-        tid = u["telegram_id"]
-        nick = f"@{u['username']}" if u.get("username") else f"id:{tid}"
-        plan = u.get("plan", "free")
-        subscribed_until = u.get("subscribed_until")
-        q_today = today_per_user.get(tid, 0)
-        q_total = all_per_user.get(tid, 0)
+    payments_block = ""
+    if payments_today:
+        payer_ids = {p["telegram_id"] for p in payments_today}
+        missing_ids = [tid for tid in payer_ids if tid not in users_info]
+        if missing_ids:
+            rows = (
+                sb.table("users")
+                .select("telegram_id, username, full_name")
+                .in_("telegram_id", missing_ids)
+                .execute()
+                .data
+            )
+            for u in rows:
+                users_info[u["telegram_id"]] = u
 
-        if plan == "free":
-            plan_str = "🆓"
-        else:
-            emoji = "🌟"
-            if subscribed_until:
-                until_dt = datetime.fromisoformat(subscribed_until)
-                plan_str = f"{emoji}{until_dt.strftime('%d.%m')}"
-            else:
-                plan_str = emoji
+        payment_lines = []
+        for p in payments_today:
+            info = users_info.get(p["telegram_id"], {})
+            nick = _nick(p["telegram_id"], info)
+            payment_lines.append(f"{nick} | {p['plan']} | {p['amount']} ₽")
+        payments_lines = "\n".join(payment_lines)
+        payments_block = f"\n\n💳 <b>Оплатили за сутки:</b>\n{payments_lines}"
 
-        today_mark = f"<b>сег:{q_today}</b>" if q_today > 0 else f"сег:{q_today}"
-        user_lines.append(f"{nick} | {plan_str} | {today_mark} всего:{q_total}")
-
-    users_block = "\n".join(user_lines) if user_lines else "Пользователей нет."
+    users_line = (
+        f"👥 {total_users} польз.  |  💳 платных: {paid_users}  |  "
+        f"🆓 free: {free_users}"
+    )
+    queries_line = (
+        f"📈 Сегодня: {total_today} зап. (~{cost_today} ₽)  |  "
+        f"Всего: {total_all} зап. (~{cost_all} ₽)"
+    )
 
     return (
         f"📊 <b>Статистика за {date_str}</b>\n"
         f"\n"
-        f"👥 {len(users)} польз.  |  💳 платных: {paid_count}  |  🆓 free: {free_count}\n"
-        f"📈 Сегодня: {total_today} зап. (~{cost_today} ₽)  |  Всего: {total_all} зап. (~{cost_all} ₽)\n"
+        f"{users_line}\n"
+        f"{queries_line}\n"
         f"\n"
-        f"<b>Пользователи:</b>\n"
-        f"{users_block}\n"
+        f"<b>Активны за сутки:</b>\n"
+        f"{active_block}"
+        f"{payments_block}\n"
         f"\n"
         f"💳 OpenAI: platform.openai.com → Billing\n"
         f"💳 Anthropic: console.anthropic.com → Billing"
