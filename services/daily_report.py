@@ -33,7 +33,8 @@ def _plan_str(info: dict) -> str:
     return "🌟"
 
 
-def _build_report() -> str:
+def _build_report() -> tuple[str, int]:
+    """Возвращает (текст отчёта, кол-во запросов за сутки)."""
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     now_msk = datetime.now(MOSCOW_TZ)
 
@@ -144,7 +145,7 @@ def _build_report() -> str:
         f"Всего: {total_all} зап. (~{cost_all} ₽)"
     )
 
-    return (
+    text = (
         f"📊 <b>Статистика за {date_str}</b>\n"
         f"\n"
         f"{users_line}\n"
@@ -157,11 +158,17 @@ def _build_report() -> str:
         f"💳 OpenAI: platform.openai.com → Billing\n"
         f"💳 Anthropic: console.anthropic.com → Billing"
     )
+    return text, total_today
 
 
 async def send_daily_report(bot) -> None:
     try:
-        text = await asyncio.to_thread(_build_report)
+        text, total_today = await asyncio.to_thread(_build_report)
+        if total_today == 0:
+            logger.info(
+                "Ежедневный отчёт пропущен — за сутки не было запросов"
+            )
+            return
         for admin_id in ADMIN_IDS:
             # Разбиваем если длиннее лимита Telegram
             if len(text) <= 4096:

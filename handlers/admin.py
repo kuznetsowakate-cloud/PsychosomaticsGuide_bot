@@ -60,7 +60,7 @@ async def cmd_stats(message: Message):
 
     wait_msg = await message.answer("⏳ Собираю статистику...")
     sources_count, chunks_count = await asyncio.to_thread(_get_kb_stats)
-    report = await asyncio.to_thread(_build_report)
+    report, _total_today = await asyncio.to_thread(_build_report)
 
     kb_line = f"📚 Источников: {sources_count} | 🧩 Чанков: {chunks_count}\n\n"
     full_text = kb_line + report
