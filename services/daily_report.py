@@ -41,11 +41,20 @@ def _build_report(include_paid_list: bool = False) -> tuple[str, int]:
     """
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     now_msk = datetime.now(MOSCOW_TZ)
+    now_utc_iso = datetime.now(timezone.utc).isoformat()
 
     # Начало сегодняшнего дня по МСК в UTC для фильтрации query_log/payments
     today_start = now_msk.replace(
         hour=0, minute=0, second=0, microsecond=0
     ).astimezone(timezone.utc).isoformat()
+
+    # "Платный" считаем только если подписка ещё не истекла. Поле plan
+    # сбрасывается на free лениво (при следующем запросе пользователя,
+    # см. check_query_limit), поэтому без этого условия в отчёте
+    # зависают уже истёкшие подписки, пока их владелец не напишет боту.
+    not_expired = (
+        f"subscribed_until.is.null,subscribed_until.gte.{now_utc_iso}"
+    )
 
     # Общие счётчики — только count, без выгрузки всех строк
     total_users = (
@@ -54,7 +63,8 @@ def _build_report(include_paid_list: bool = False) -> tuple[str, int]:
     )
     paid_users = (
         sb.table("users").select("telegram_id", count="exact")
-        .neq("plan", "free").limit(1).execute().count or 0
+        .neq("plan", "free").or_(not_expired)
+        .limit(1).execute().count or 0
     )
     free_users = total_users - paid_users
 
@@ -150,6 +160,7 @@ def _build_report(include_paid_list: bool = False) -> tuple[str, int]:
             sb.table("users")
             .select("telegram_id, username, full_name, subscribed_until")
             .neq("plan", "free")
+            .or_(not_expired)
             .order("subscribed_until")
             .execute()
             .data
