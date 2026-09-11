@@ -33,8 +33,12 @@ def _plan_str(info: dict) -> str:
     return "🌟"
 
 
-def _build_report() -> tuple[str, int]:
-    """Возвращает (текст отчёта, кол-во запросов за сутки)."""
+def _build_report(include_paid_list: bool = False) -> tuple[str, int]:
+    """Возвращает (текст отчёта, кол-во запросов за сутки).
+
+    include_paid_list=True добавляет ники и срок действия подписки
+    для всех платных пользователей (используется в /stats).
+    """
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     now_msk = datetime.now(MOSCOW_TZ)
 
@@ -140,6 +144,29 @@ def _build_report() -> tuple[str, int]:
         f"👥 {total_users} польз.  |  💳 платных: {paid_users}  |  "
         f"🆓 free: {free_users}"
     )
+
+    if include_paid_list and paid_users:
+        rows = (
+            sb.table("users")
+            .select("telegram_id, username, full_name, subscribed_until")
+            .neq("plan", "free")
+            .order("subscribed_until")
+            .execute()
+            .data
+        )
+        paid_lines = []
+        for u in rows:
+            until = u.get("subscribed_until")
+            until_str = "—"
+            if until:
+                until_dt = datetime.fromisoformat(until)
+                until_str = until_dt.strftime("%d.%m.%Y")
+            nick = _nick(u["telegram_id"], u)
+            paid_lines.append(f"{nick} | до {until_str}")
+        users_line += (
+            "\n\n🌟 <b>Платные пользователи:</b>\n" + "\n".join(paid_lines)
+        )
+
     queries_line = (
         f"📈 Сегодня: {total_today} зап. (~{cost_today} ₽)  |  "
         f"Всего: {total_all} зап. (~{cost_all} ₽)"

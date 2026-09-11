@@ -54,13 +54,19 @@ async def cmd_stats(message: Message):
 
     # Данные по базе знаний (быстро)
     def _get_kb_stats():
-        sources = sb.table("sources").select("id", count="exact").execute().count
-        chunks = sb.table("chunks").select("id", count="exact").execute().count
+        sources = (
+            sb.table("sources").select("id", count="exact").execute().count
+        )
+        chunks = (
+            sb.table("chunks").select("id", count="exact").execute().count
+        )
         return sources, chunks
 
     wait_msg = await message.answer("⏳ Собираю статистику...")
     sources_count, chunks_count = await asyncio.to_thread(_get_kb_stats)
-    report, _total_today = await asyncio.to_thread(_build_report)
+    report, _total_today = await asyncio.to_thread(
+        _build_report, include_paid_list=True
+    )
 
     kb_line = f"📚 Источников: {sources_count} | 🧩 Чанков: {chunks_count}\n\n"
     full_text = kb_line + report
