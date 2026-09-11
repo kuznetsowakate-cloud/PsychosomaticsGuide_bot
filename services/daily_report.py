@@ -7,12 +7,11 @@ from datetime import datetime, timedelta, timezone
 from supabase import create_client
 
 from config.settings import (
-    ADMIN_IDS, COST_PER_QUERY_RUB, SUPABASE_KEY, SUPABASE_URL,
+    ADMIN_IDS, COST_PER_QUERY_RUB, MOSCOW_TZ, SUPABASE_KEY, SUPABASE_URL,
 )
 
 logger = logging.getLogger(__name__)
 
-MOSCOW_TZ = timezone(timedelta(hours=3))
 REPORT_HOUR = 9  # 09:00 по Москве
 
 

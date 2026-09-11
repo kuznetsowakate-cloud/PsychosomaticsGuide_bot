@@ -16,6 +16,11 @@ from aiogram.types import (
 from keyboards.inline import (
     kb_main_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
     kb_terms_accept, kb_delete_confirm, kb_after_answer_with_related,
+    kb_clients_menu,
+)
+from services.appointments import (
+    create_appointment, list_upcoming_appointments, delete_appointment,
+    set_template, parse_appointment_datetime, format_when, to_moscow,
 )
 from services.chain_calc import calculate_chain, parse_chain_input
 from services.rag import rag_search
@@ -32,6 +37,11 @@ from texts.messages import (
     MY_PLAN_FREE, MY_PLAN_PAID,
     FEEDBACK_PROMPT, FEEDBACK_SENT, FEEDBACK_RECEIVED,
     TERMS_PROMPT, DELETE_PROMPT, DELETE_CONFIRMED, DELETE_ADMIN_NOTIFY,
+    APPT_MENU_TEXT, APPT_DATETIME_PROMPT, APPT_DATETIME_ERROR,
+    APPT_NAME_PROMPT, APPT_SAVED, CLIENTS_LIST_EMPTY, CLIENTS_LIST_HEADER,
+    CLIENTS_LIST_FOOTER, DELETE_CLIENT_USAGE, DELETE_CLIENT_NOT_FOUND,
+    DELETE_CLIENT_DONE, TEMPLATE_PRO_ONLY, TEMPLATE_INFO, TEMPLATE_SAVED,
+    TEMPLATE_RESET, DEFAULT_REMINDER_TEMPLATE, DEFAULT_FOLLOWUP_TEMPLATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +52,8 @@ class UserStates(StatesGroup):
     waiting_query = State()
     waiting_chain_input = State()
     waiting_feedback = State()
+    waiting_appointment_datetime = State()
+    waiting_appointment_name = State()
 
 
 # ── /start ─────────────────────────────────────────────────────────────────
@@ -200,6 +212,163 @@ async def cmd_promo(message: Message, state: FSMContext):
         f"Срок: <b>{result['days']} дней</b>\n\n"
         f"Теперь у вас безлимитный доступ к справочнику!",
         reply_markup=kb_main_menu(),
+    )
+
+
+# ── Напоминания клиентам ────────────────────────────────────────────────────
+
+@user_router.message(Command("newclient"))
+async def cmd_newclient(message: Message, state: FSMContext):
+    await state.set_state(UserStates.waiting_appointment_datetime)
+    await message.answer(APPT_DATETIME_PROMPT)
+
+
+@user_router.callback_query(F.data == "action_clients")
+async def cb_clients_menu(callback: CallbackQuery):
+    await _remove_keyboard(callback)
+    await callback.message.answer(
+        APPT_MENU_TEXT, reply_markup=kb_clients_menu()
+    )
+    await callback.answer()
+
+
+@user_router.callback_query(F.data == "action_newclient")
+async def cb_newclient(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(UserStates.waiting_appointment_datetime)
+    await _remove_keyboard(callback)
+    await callback.message.answer(APPT_DATETIME_PROMPT)
+    await callback.answer()
+
+
+@user_router.message(UserStates.waiting_appointment_datetime)
+async def on_appointment_datetime(message: Message, state: FSMContext):
+    user = await get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username or "",
+        full_name=message.from_user.full_name or "",
+    )
+    if not user.get("terms_accepted"):
+        await state.clear()
+        await message.answer(
+            TERMS_PROMPT, reply_markup=kb_terms_accept(),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+        return
+
+    when_dt = parse_appointment_datetime(message.text or "")
+    if not when_dt:
+        await message.answer(APPT_DATETIME_ERROR)
+        return  # остаёмся в том же состоянии — даём попробовать ещё раз
+
+    await state.set_data({"appointment_at": when_dt.isoformat()})
+    await state.set_state(UserStates.waiting_appointment_name)
+    await message.answer(APPT_NAME_PROMPT)
+
+
+@user_router.message(UserStates.waiting_appointment_name)
+async def on_appointment_name(message: Message, state: FSMContext):
+    client_name = (message.text or "").strip()
+    if not client_name:
+        await message.answer(APPT_NAME_PROMPT)
+        return
+
+    data = await state.get_data()
+    when_dt = datetime.fromisoformat(data["appointment_at"])
+    await state.clear()
+
+    await create_appointment(message.from_user.id, client_name, when_dt)
+
+    await message.answer(
+        APPT_SAVED.format(client_name=client_name, when=format_when(when_dt)),
+        reply_markup=kb_main_menu(),
+    )
+
+
+async def _clients_list_text(telegram_id: int) -> str:
+    appointments = await list_upcoming_appointments(telegram_id)
+    if not appointments:
+        return CLIENTS_LIST_EMPTY
+
+    lines = []
+    for appt in appointments:
+        when_dt = to_moscow(appt["appointment_at"])
+        lines.append(
+            f"#{appt['id']} | {format_when(when_dt)} | {appt['client_name']}"
+        )
+    return CLIENTS_LIST_HEADER + "\n".join(lines) + CLIENTS_LIST_FOOTER
+
+
+@user_router.message(Command("clients"))
+async def cmd_clients(message: Message):
+    text = await _clients_list_text(message.from_user.id)
+    await message.answer(text, reply_markup=kb_back())
+
+
+@user_router.callback_query(F.data == "action_clients_list")
+async def cb_clients_list(callback: CallbackQuery):
+    await _remove_keyboard(callback)
+    text = await _clients_list_text(callback.from_user.id)
+    await callback.message.answer(text, reply_markup=kb_back())
+    await callback.answer()
+
+
+@user_router.message(Command("delete_client"))
+async def cmd_delete_client(message: Message):
+    args = message.text.split()[1:]
+    if not args or not args[0].isdigit():
+        await message.answer(DELETE_CLIENT_USAGE)
+        return
+
+    deleted = await delete_appointment(message.from_user.id, int(args[0]))
+    reply = DELETE_CLIENT_DONE if deleted else DELETE_CLIENT_NOT_FOUND
+    await message.answer(reply)
+
+
+async def _handle_template_command(
+    message: Message, field: str, title: str, default_text: str, cmd: str,
+) -> None:
+    user = await get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username or "",
+        full_name=message.from_user.full_name or "",
+    )
+    await check_query_limit(user)  # лениво сбрасывает истёкший план
+
+    args = message.text.split(maxsplit=1)[1:]
+    if not args:
+        current = user.get(field) or default_text
+        await message.answer(
+            TEMPLATE_INFO.format(title=title, current=current, cmd=cmd)
+        )
+        return
+
+    if user.get("plan", "free") == "free":
+        await message.answer(TEMPLATE_PRO_ONLY, reply_markup=kb_subscribe())
+        return
+
+    new_text = args[0].strip()
+    if new_text.lower() == "reset":
+        await set_template(message.from_user.id, field, None)
+        await message.answer(TEMPLATE_RESET)
+        return
+
+    await set_template(message.from_user.id, field, new_text)
+    await message.answer(TEMPLATE_SAVED)
+
+
+@user_router.message(Command("reminder_template"))
+async def cmd_reminder_template(message: Message):
+    await _handle_template_command(
+        message, "reminder_template", "Текст напоминания клиенту",
+        DEFAULT_REMINDER_TEMPLATE, "/reminder_template",
+    )
+
+
+@user_router.message(Command("followup_template"))
+async def cmd_followup_template(message: Message):
+    await _handle_template_command(
+        message, "followup_template", "Текст вопроса о самочувствии",
+        DEFAULT_FOLLOWUP_TEMPLATE, "/followup_template",
     )
 
 

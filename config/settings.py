@@ -1,7 +1,10 @@
 import os
+from datetime import timedelta, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
+
+MOSCOW_TZ = timezone(timedelta(hours=3))
 
 # Telegram
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")

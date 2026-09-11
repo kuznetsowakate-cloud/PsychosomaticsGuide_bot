@@ -159,3 +159,30 @@ $$;
 alter table users
     add column if not exists terms_accepted    boolean     default false,
     add column if not exists terms_accepted_at timestamptz;
+
+-- ============================================================
+-- МИГРАЦИЯ: напоминания о клиентских записях
+-- Выполнить в Supabase SQL Editor (один раз)
+-- ============================================================
+alter table users
+    add column if not exists reminder_template text,
+    add column if not exists followup_template text;
+
+create table if not exists client_appointments (
+    id              bigserial primary key,
+    telegram_id     bigint references users(telegram_id) on delete cascade,
+    client_name     text not null,
+    appointment_at  timestamptz not null,
+    reminder_sent   boolean default false,
+    followup_sent   boolean default false,
+    created_at      timestamptz default now()
+);
+
+-- Для быстрой выборки в фоновом цикле напоминаний
+create index if not exists client_appointments_pending_idx
+    on client_appointments (appointment_at)
+    where not reminder_sent or not followup_sent;
+
+-- Для /clients (список записей конкретного психолога)
+create index if not exists client_appointments_telegram_id_idx
+    on client_appointments (telegram_id, appointment_at);

@@ -9,6 +9,9 @@ def kb_main_menu() -> InlineKeyboardMarkup:
     )
     builder.button(text="🔗 Расчёт цепочки", callback_data="action_chain")
     builder.button(
+        text="📅 Напоминания клиентам", callback_data="action_clients"
+    )
+    builder.button(
         text="💳 Тариф и подписка", callback_data="action_subscribe"
     )
     builder.button(text="❓ Как пользоваться", callback_data="action_help")
@@ -16,6 +19,19 @@ def kb_main_menu() -> InlineKeyboardMarkup:
         text="💬 Написать разработчику",
         callback_data="action_feedback",
     )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def kb_clients_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="➕ Добавить запись", callback_data="action_newclient"
+    )
+    builder.button(
+        text="📋 Список записей", callback_data="action_clients_list"
+    )
+    builder.button(text="← Меню", callback_data="action_back")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -59,7 +75,9 @@ def kb_after_answer_with_related(questions: list[str]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     n = min(len(questions), 3)
     for i, q in enumerate(questions[:3]):
-        builder.button(text=f"💭 {_wrap_button(q)}", callback_data=f"related_{i}")
+        builder.button(
+            text=f"💭 {_wrap_button(q)}", callback_data=f"related_{i}"
+        )
     builder.button(text="🔍 Новый запрос", callback_data="action_search")
     builder.button(text="🏠 Меню", callback_data="action_back")
     builder.adjust(*([1] * n + [2]))

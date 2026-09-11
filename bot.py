@@ -104,6 +104,11 @@ async def main():
     report_task = asyncio.create_task(daily_report_loop(bot=bot))
     logger.info("Ежедневный отчёт запланирован на 09:00 МСК")
 
+    # Напоминания о клиентских записях
+    from services.appointments import reminders_loop
+    reminders_task = asyncio.create_task(reminders_loop(bot=bot))
+    logger.info("Цикл напоминаний о клиентах запущен")
+
     # Редирект-бот (старый токен) — отвечает редиректом в новый
     redirect_task = None
     if OLD_BOT_TOKEN:
@@ -122,6 +127,7 @@ async def main():
         if redirect_task:
             redirect_task.cancel()
         report_task.cancel()
+        reminders_task.cancel()
         await bot.session.close()
 
 
@@ -133,6 +139,26 @@ async def _set_commands(bot: Bot) -> None:
             description="Мой тариф и подписка",
         ),
         BotCommand(command="chain", description="Расчёт цепочки"),
+        BotCommand(
+            command="newclient",
+            description="Добавить запись клиента",
+        ),
+        BotCommand(
+            command="clients",
+            description="Список записей клиентов",
+        ),
+        BotCommand(
+            command="delete_client",
+            description="Удалить запись клиента",
+        ),
+        BotCommand(
+            command="reminder_template",
+            description="Текст напоминания клиенту (Pro)",
+        ),
+        BotCommand(
+            command="followup_template",
+            description="Текст вопроса о самочувствии (Pro)",
+        ),
         BotCommand(command="cancel", description="Отменить текущее действие"),
         BotCommand(command="promo", description="Активировать промокод"),
         BotCommand(command="feedback", description="Написать разработчику"),
