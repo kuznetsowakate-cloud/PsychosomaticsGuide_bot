@@ -181,6 +181,28 @@ async def create_appointment(
     return result.data[0]["id"]
 
 
+async def count_appointments_this_month(
+    telegram_id: int, now: datetime | None = None,
+) -> int:
+    """Сколько записей пользователь добавил с начала месяца (по МСК)."""
+    now = now or datetime.now(MOSCOW_TZ)
+    month_start = now.astimezone(MOSCOW_TZ).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0,
+    )
+
+    def _sync():
+        return (
+            supabase.table("client_appointments")
+            .select("id", count="exact")
+            .eq("telegram_id", telegram_id)
+            .gte("created_at", month_start.isoformat())
+            .execute()
+        )
+
+    result = await asyncio.to_thread(_sync)
+    return result.count or 0
+
+
 async def list_upcoming_appointments(telegram_id: int) -> list[dict]:
     def _sync():
         now_iso = datetime.now(timezone.utc).isoformat()

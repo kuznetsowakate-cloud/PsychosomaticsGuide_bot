@@ -22,6 +22,7 @@ from keyboards.inline import (
 from services.appointments import (
     create_appointment, list_upcoming_appointments, delete_appointment,
     set_template, parse_appointment_input, format_when, to_moscow,
+    count_appointments_this_month,
 )
 from services.chain_calc import calculate_chain, parse_chain_input
 from services.rag import rag_search
@@ -30,7 +31,9 @@ from services.users import (
     increment_query_count, save_query_log,
     activate_subscription, accept_terms, use_promo_code,
 )
-from config.settings import PLAN_PRICES, ADMIN_IDS, PROVIDER_TOKEN
+from config.settings import (
+    PLAN_PRICES, ADMIN_IDS, PROVIDER_TOKEN, FREE_APPOINTMENTS_PER_MONTH,
+)
 from texts.messages import (
     WELCOME, HELP_TEXT, SEARCH_PROMPT, THINKING,
     LIMIT_REACHED, NO_RESULTS,
@@ -45,6 +48,7 @@ from texts.messages import (
     DELETE_CLIENT_DONE, TEMPLATE_PRO_ONLY, TEMPLATE_INFO, TEMPLATE_SAVED,
     TEMPLATE_RESET, DEFAULT_REMINDER_TEMPLATE, DEFAULT_FOLLOWUP_TEMPLATE,
     TEMPLATE_CMD_HINT, TEMPLATE_EDIT_HINT, APPT_DELETE_CONFIRM, PROMO_PROMPT,
+    APPT_LIMIT_REACHED, APPT_FREE_LEFT,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,7 +157,12 @@ async def _plan_text(telegram_id: int, username: str, full_name: str) -> str:
     used_today = user.get("queries_today", 0)
 
     if plan == "free":
-        return MY_PLAN_FREE.format(used=used_today)
+        appts = await count_appointments_this_month(telegram_id)
+        return MY_PLAN_FREE.format(
+            used=used_today,
+            appts=min(appts, FREE_APPOINTMENTS_PER_MONTH),
+            appts_limit=FREE_APPOINTMENTS_PER_MONTH,
+        )
 
     subscribed_until = user.get("subscribed_until", "")
     until_str = "—"
@@ -247,10 +256,46 @@ async def _apply_promo(message: Message, state: FSMContext, code: str):
 
 # ── Напоминания клиентам ────────────────────────────────────────────────────
 
+async def _appointments_left(actor) -> int | None:
+    """Сколько записей клиентов ещё можно добавить в этом месяце.
+
+    None — без ограничений (Pro или администратор).
+    """
+    user = await _get_user_for(actor)
+    if actor.id in ADMIN_IDS or user.get("plan", "free") != "free":
+        return None
+    used = await count_appointments_this_month(actor.id)
+    return max(FREE_APPOINTMENTS_PER_MONTH - used, 0)
+
+
+async def _send_appt_limit_reached(message: Message) -> None:
+    await message.answer(
+        APPT_LIMIT_REACHED.format(limit=FREE_APPOINTMENTS_PER_MONTH),
+        reply_markup=kb_subscribe(),
+    )
+
+
+async def _start_new_appointment(
+    message: Message, state: FSMContext, actor,
+) -> None:
+    left = await _appointments_left(actor)
+    if left == 0:
+        await state.clear()
+        await _send_appt_limit_reached(message)
+        return
+
+    prompt = APPT_DATETIME_PROMPT
+    if left is not None:
+        prompt += APPT_FREE_LEFT.format(
+            left=left, limit=FREE_APPOINTMENTS_PER_MONTH,
+        )
+    await state.set_state(UserStates.waiting_appointment_datetime)
+    await message.answer(prompt)
+
+
 @user_router.message(Command("newclient"))
 async def cmd_newclient(message: Message, state: FSMContext):
-    await state.set_state(UserStates.waiting_appointment_datetime)
-    await message.answer(APPT_DATETIME_PROMPT)
+    await _start_new_appointment(message, state, message.from_user)
 
 
 @user_router.callback_query(F.data == "action_clients")
@@ -264,9 +309,10 @@ async def cb_clients_menu(callback: CallbackQuery):
 
 @user_router.callback_query(F.data == "action_newclient")
 async def cb_newclient(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(UserStates.waiting_appointment_datetime)
     await _remove_keyboard(callback)
-    await callback.message.answer(APPT_DATETIME_PROMPT)
+    await _start_new_appointment(
+        callback.message, state, callback.from_user,
+    )
     await callback.answer()
 
 
@@ -315,6 +361,11 @@ async def _save_appointment(
     message: Message, state: FSMContext, client_name: str, when_dt: datetime,
 ) -> None:
     await state.clear()
+    # Повторная проверка: лимит мог закончиться, пока вводили данные
+    if await _appointments_left(message.from_user) == 0:
+        await _send_appt_limit_reached(message)
+        return
+
     try:
         await create_appointment(message.from_user.id, client_name, when_dt)
     except Exception:
