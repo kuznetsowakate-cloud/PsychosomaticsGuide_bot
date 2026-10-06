@@ -256,13 +256,18 @@ async def _apply_promo(message: Message, state: FSMContext, code: str):
 
 # ── Напоминания клиентам ────────────────────────────────────────────────────
 
+def _has_pro(user: dict, telegram_id: int) -> bool:
+    """Pro-возможности: платная подписка или администратор."""
+    return telegram_id in ADMIN_IDS or user.get("plan", "free") != "free"
+
+
 async def _appointments_left(actor) -> int | None:
     """Сколько записей клиентов ещё можно добавить в этом месяце.
 
     None — без ограничений (Pro или администратор).
     """
     user = await _get_user_for(actor)
-    if actor.id in ADMIN_IDS or user.get("plan", "free") != "free":
+    if _has_pro(user, actor.id):
         return None
     used = await count_appointments_this_month(actor.id)
     return max(FREE_APPOINTMENTS_PER_MONTH - used, 0)
@@ -492,7 +497,7 @@ async def _handle_template_command(message: Message, kind: str) -> None:
         )
         return
 
-    if user.get("plan", "free") == "free":
+    if not _has_pro(user, message.from_user.id):
         await message.answer(TEMPLATE_PRO_ONLY, reply_markup=kb_subscribe())
         return
 
@@ -522,7 +527,7 @@ async def cb_template(callback: CallbackQuery, state: FSMContext):
     user = await _get_user_for(callback.from_user)
     await _remove_keyboard(callback)
 
-    if user.get("plan", "free") == "free":
+    if not _has_pro(user, callback.from_user.id):
         await callback.message.answer(_template_info(user, kind))
         await callback.message.answer(
             TEMPLATE_PRO_ONLY, reply_markup=kb_subscribe(),

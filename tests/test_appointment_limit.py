@@ -60,3 +60,10 @@ def test_count_uses_start_of_moscow_month():
     assert datetime.fromisoformat(month_start) == datetime(
         2026, 10, 1, 0, 0, tzinfo=MOSCOW_TZ,
     )
+
+
+def test_has_pro():
+    assert user_handlers._has_pro({"plan": "pro"}, 1) is True
+    assert user_handlers._has_pro({"plan": "free"}, 1) is False
+    # ADMIN_IDS=123 — админ получает Pro-возможности и без подписки
+    assert user_handlers._has_pro({"plan": "free"}, 123) is True
