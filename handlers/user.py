@@ -37,7 +37,8 @@ from texts.messages import (
     FEEDBACK_PROMPT, FEEDBACK_SENT, FEEDBACK_RECEIVED,
     TERMS_PROMPT, DELETE_PROMPT, DELETE_CONFIRMED, DELETE_ADMIN_NOTIFY,
     APPT_MENU_TEXT, APPT_DATETIME_PROMPT, APPT_DATETIME_ERROR,
-    APPT_NAME_PROMPT, APPT_SAVED, CLIENTS_LIST_EMPTY, CLIENTS_LIST_HEADER,
+    APPT_NAME_PROMPT, APPT_SAVED, APPT_SAVE_ERROR,
+    CLIENTS_LIST_EMPTY, CLIENTS_LIST_HEADER,
     CLIENTS_LIST_FOOTER, DELETE_CLIENT_USAGE, DELETE_CLIENT_NOT_FOUND,
     DELETE_CLIENT_DONE, TEMPLATE_PRO_ONLY, TEMPLATE_INFO, TEMPLATE_SAVED,
     TEMPLATE_RESET, DEFAULT_REMINDER_TEMPLATE, DEFAULT_FOLLOWUP_TEMPLATE,
@@ -284,7 +285,14 @@ async def _save_appointment(
     message: Message, state: FSMContext, client_name: str, when_dt: datetime,
 ) -> None:
     await state.clear()
-    await create_appointment(message.from_user.id, client_name, when_dt)
+    try:
+        await create_appointment(message.from_user.id, client_name, when_dt)
+    except Exception:
+        logger.exception(
+            "Не удалось сохранить запись клиента для %d", message.from_user.id,
+        )
+        await message.answer(APPT_SAVE_ERROR, reply_markup=kb_main_menu())
+        return
 
     await message.answer(
         APPT_SAVED.format(client_name=client_name, when=format_when(when_dt)),
