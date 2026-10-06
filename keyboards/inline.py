@@ -7,10 +7,16 @@ def kb_main_menu() -> InlineKeyboardMarkup:
     builder.button(
         text="🔍 Поиск по справочнику", callback_data="action_search"
     )
-    builder.button(text="🔗 Расчёт цепочки", callback_data="action_chain")
-    builder.button(
-        text="📅 Напоминания клиентам", callback_data="action_clients"
-    )
+    builder.button(text="🔗 Цепочка", callback_data="action_chain")
+    builder.button(text="📅 Напоминания", callback_data="action_clients")
+    builder.button(text="⚙️ Ещё", callback_data="action_more")
+    builder.adjust(1, 2, 1)
+    return builder.as_markup()
+
+
+def kb_more_menu() -> InlineKeyboardMarkup:
+    """Подменю «Ещё» — служебные пункты, которые нужны реже."""
+    builder = InlineKeyboardBuilder()
     builder.button(
         text="💳 Тариф и подписка", callback_data="action_subscribe"
     )
@@ -19,6 +25,7 @@ def kb_main_menu() -> InlineKeyboardMarkup:
         text="💬 Написать разработчику",
         callback_data="action_feedback",
     )
+    builder.button(text="← Назад", callback_data="action_menu_main")
     builder.adjust(1)
     return builder.as_markup()
 

@@ -14,7 +14,7 @@ from aiogram.types import (
 )
 
 from keyboards.inline import (
-    kb_main_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
+    kb_main_menu, kb_more_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
     kb_terms_accept, kb_delete_confirm, kb_clients_menu,
 )
 from services.appointments import (
@@ -483,6 +483,26 @@ async def cb_back(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await _remove_keyboard(callback)
     await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
+    await callback.answer()
+
+
+@user_router.callback_query(F.data == "action_more")
+async def cb_more(callback: CallbackQuery):
+    """Раскрываем подменю «Ещё» в том же сообщении."""
+    try:
+        await callback.message.edit_reply_markup(reply_markup=kb_more_menu())
+    except Exception:
+        await callback.message.answer(WELCOME, reply_markup=kb_more_menu())
+    await callback.answer()
+
+
+@user_router.callback_query(F.data == "action_menu_main")
+async def cb_menu_main(callback: CallbackQuery):
+    """Возврат из подменю «Ещё» к главному меню в том же сообщении."""
+    try:
+        await callback.message.edit_reply_markup(reply_markup=kb_main_menu())
+    except Exception:
+        await callback.message.answer(WELCOME, reply_markup=kb_main_menu())
     await callback.answer()
 
 
