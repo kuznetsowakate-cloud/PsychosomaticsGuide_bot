@@ -132,38 +132,21 @@ async def main():
 
 
 async def _set_commands(bot: Bot) -> None:
+    # Список «Меню» в Telegram плоский — держим в нём только частые
+    # команды. Остальные доступны кнопками (и продолжают работать вручную).
     user_commands = [
         BotCommand(command="start", description="Главное меню"),
-        BotCommand(
-            command="my_plan",
-            description="Мой тариф и подписка",
-        ),
-        BotCommand(command="chain", description="Расчёт цепочки"),
         BotCommand(
             command="newclient",
             description="Добавить запись клиента",
         ),
+        BotCommand(command="clients", description="Записи клиентов"),
+        BotCommand(command="chain", description="Расчёт цепочки"),
         BotCommand(
-            command="clients",
-            description="Список записей клиентов",
+            command="my_plan",
+            description="Мой тариф и подписка",
         ),
-        BotCommand(
-            command="delete_client",
-            description="Удалить запись клиента",
-        ),
-        BotCommand(
-            command="reminder_template",
-            description="Текст напоминания клиенту (Pro)",
-        ),
-        BotCommand(
-            command="followup_template",
-            description="Текст вопроса о самочувствии (Pro)",
-        ),
-        BotCommand(command="cancel", description="Отменить текущее действие"),
-        BotCommand(command="promo", description="Активировать промокод"),
-        BotCommand(command="feedback", description="Написать разработчику"),
         BotCommand(command="help", description="Как пользоваться"),
-        BotCommand(command="delete", description="Удалить мои данные"),
     ]
     admin_commands = user_commands + [
         BotCommand(

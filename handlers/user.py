@@ -1,3 +1,4 @@
+import html
 import json
 import logging
 import time
@@ -14,8 +15,9 @@ from aiogram.types import (
 )
 
 from keyboards.inline import (
-    kb_main_menu, kb_more_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
-    kb_terms_accept, kb_delete_confirm, kb_clients_menu,
+    kb_main_menu, kb_more_menu, kb_subscribe, kb_back, kb_after_answer,
+    kb_chain_result, kb_terms_accept, kb_delete_confirm, kb_clients_menu,
+    kb_clients_list, kb_appt_delete_confirm, kb_template_edit,
 )
 from services.appointments import (
     create_appointment, list_upcoming_appointments, delete_appointment,
@@ -42,6 +44,7 @@ from texts.messages import (
     CLIENTS_LIST_FOOTER, DELETE_CLIENT_USAGE, DELETE_CLIENT_NOT_FOUND,
     DELETE_CLIENT_DONE, TEMPLATE_PRO_ONLY, TEMPLATE_INFO, TEMPLATE_SAVED,
     TEMPLATE_RESET, DEFAULT_REMINDER_TEMPLATE, DEFAULT_FOLLOWUP_TEMPLATE,
+    TEMPLATE_CMD_HINT, TEMPLATE_EDIT_HINT, APPT_DELETE_CONFIRM, PROMO_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,6 +57,8 @@ class UserStates(StatesGroup):
     waiting_feedback = State()
     waiting_appointment_datetime = State()
     waiting_appointment_name = State()
+    waiting_promo = State()
+    waiting_template = State()
 
 
 # ── /start ─────────────────────────────────────────────────────────────────
@@ -95,6 +100,15 @@ async def cmd_help(message: Message):
 @user_router.message(Command("delete"))
 async def cmd_delete(message: Message):
     await message.answer(DELETE_PROMPT, reply_markup=kb_delete_confirm())
+
+
+@user_router.callback_query(F.data == "action_delete")
+async def cb_delete(callback: CallbackQuery):
+    await _remove_keyboard(callback)
+    await callback.message.answer(
+        DELETE_PROMPT, reply_markup=kb_delete_confirm(),
+    )
+    await callback.answer()
 
 
 @user_router.callback_query(F.data == "delete_confirm")
@@ -176,12 +190,28 @@ async def cmd_chain(message: Message, state: FSMContext):
 async def cmd_promo(message: Message, state: FSMContext):
     args = message.text.split()[1:]
     if not args:
-        await message.answer(
-            "🎟 Введите промокод:\n<code>/promo ВАШ_КОД</code>"
-        )
+        await state.set_state(UserStates.waiting_promo)
+        await message.answer(PROMO_PROMPT, reply_markup=kb_back())
         return
 
-    code = args[0].strip()
+    await _apply_promo(message, state, args[0].strip())
+
+
+@user_router.callback_query(F.data == "action_promo")
+async def cb_promo(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(UserStates.waiting_promo)
+    await _remove_keyboard(callback)
+    await callback.message.answer(PROMO_PROMPT, reply_markup=kb_back())
+    await callback.answer()
+
+
+@user_router.message(UserStates.waiting_promo, F.text)
+async def on_promo_code(message: Message, state: FSMContext):
+    await state.clear()
+    await _apply_promo(message, state, message.text.strip())
+
+
+async def _apply_promo(message: Message, state: FSMContext, code: str):
     user = await get_or_create_user(
         telegram_id=message.from_user.id,
         username=message.from_user.username or "",
@@ -299,32 +329,64 @@ async def _save_appointment(
     )
 
 
-async def _clients_list_text(telegram_id: int) -> str:
+def _appt_label(appt: dict) -> str:
+    when_dt = to_moscow(appt["appointment_at"])
+    return f"{format_when(when_dt)} · {appt['client_name']}"
+
+
+async def _clients_list(telegram_id: int):
+    """Текст и клавиатура списка записей (с кнопками удаления)."""
     appointments = await list_upcoming_appointments(telegram_id)
     if not appointments:
-        return CLIENTS_LIST_EMPTY
+        return CLIENTS_LIST_EMPTY, kb_clients_list([])
 
-    lines = []
-    for appt in appointments:
-        when_dt = to_moscow(appt["appointment_at"])
-        lines.append(
-            f"#{appt['id']} | {format_when(when_dt)} | {appt['client_name']}"
-        )
-    return CLIENTS_LIST_HEADER + "\n".join(lines) + CLIENTS_LIST_FOOTER
+    lines = [_appt_label(appt) for appt in appointments]
+    text = CLIENTS_LIST_HEADER + "\n".join(lines) + CLIENTS_LIST_FOOTER
+    buttons = [(appt["id"], _appt_label(appt)) for appt in appointments]
+    return text, kb_clients_list(buttons)
 
 
 @user_router.message(Command("clients"))
 async def cmd_clients(message: Message):
-    text = await _clients_list_text(message.from_user.id)
-    await message.answer(text, reply_markup=kb_back())
+    text, kb = await _clients_list(message.from_user.id)
+    await message.answer(text, reply_markup=kb)
 
 
 @user_router.callback_query(F.data == "action_clients_list")
 async def cb_clients_list(callback: CallbackQuery):
-    await _remove_keyboard(callback)
-    text = await _clients_list_text(callback.from_user.id)
-    await callback.message.answer(text, reply_markup=kb_back())
+    text, kb = await _clients_list(callback.from_user.id)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        await _remove_keyboard(callback)
+        await callback.message.answer(text, reply_markup=kb)
     await callback.answer()
+
+
+@user_router.callback_query(F.data.startswith("appt_del_"))
+async def cb_appt_delete(callback: CallbackQuery):
+    appt_id = int(callback.data.removeprefix("appt_del_"))
+    appointments = await list_upcoming_appointments(callback.from_user.id)
+    appt = next((a for a in appointments if a["id"] == appt_id), None)
+    if not appt:
+        await callback.answer(DELETE_CLIENT_NOT_FOUND, show_alert=True)
+        return
+    await callback.message.edit_text(
+        APPT_DELETE_CONFIRM.format(label=_appt_label(appt)),
+        reply_markup=kb_appt_delete_confirm(appt_id),
+    )
+    await callback.answer()
+
+
+@user_router.callback_query(F.data.startswith("appt_delok_"))
+async def cb_appt_delete_ok(callback: CallbackQuery):
+    appt_id = int(callback.data.removeprefix("appt_delok_"))
+    deleted = await delete_appointment(callback.from_user.id, appt_id)
+    await callback.answer(
+        DELETE_CLIENT_DONE if deleted else DELETE_CLIENT_NOT_FOUND
+    )
+    text, kb = await _clients_list(callback.from_user.id)
+    await callback.message.edit_text(text, reply_markup=kb)
 
 
 @user_router.message(Command("delete_client"))
@@ -339,21 +401,43 @@ async def cmd_delete_client(message: Message):
     await message.answer(reply)
 
 
-async def _handle_template_command(
-    message: Message, field: str, title: str, default_text: str, cmd: str,
-) -> None:
+# kind → (поле в users, заголовок, текст по умолчанию, команда)
+_TEMPLATES = {
+    "reminder": (
+        "reminder_template", "Текст напоминания клиенту",
+        DEFAULT_REMINDER_TEMPLATE, "/reminder_template",
+    ),
+    "followup": (
+        "followup_template", "Текст вопроса о самочувствии",
+        DEFAULT_FOLLOWUP_TEMPLATE, "/followup_template",
+    ),
+}
+
+
+async def _get_user_for(actor) -> dict:
     user = await get_or_create_user(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username or "",
-        full_name=message.from_user.full_name or "",
+        telegram_id=actor.id,
+        username=actor.username or "",
+        full_name=actor.full_name or "",
     )
     await check_query_limit(user)  # лениво сбрасывает истёкший план
+    return user
+
+
+def _template_info(user: dict, kind: str) -> str:
+    field, title, default_text, _cmd = _TEMPLATES[kind]
+    current = html.escape(user.get(field) or default_text)
+    return TEMPLATE_INFO.format(title=title, current=current)
+
+
+async def _handle_template_command(message: Message, kind: str) -> None:
+    field, _title, _default, cmd = _TEMPLATES[kind]
+    user = await _get_user_for(message.from_user)
 
     args = message.text.split(maxsplit=1)[1:]
     if not args:
-        current = user.get(field) or default_text
         await message.answer(
-            TEMPLATE_INFO.format(title=title, current=current, cmd=cmd)
+            _template_info(user, kind) + TEMPLATE_CMD_HINT.format(cmd=cmd)
         )
         return
 
@@ -373,18 +457,61 @@ async def _handle_template_command(
 
 @user_router.message(Command("reminder_template"))
 async def cmd_reminder_template(message: Message):
-    await _handle_template_command(
-        message, "reminder_template", "Текст напоминания клиенту",
-        DEFAULT_REMINDER_TEMPLATE, "/reminder_template",
-    )
+    await _handle_template_command(message, "reminder")
 
 
 @user_router.message(Command("followup_template"))
 async def cmd_followup_template(message: Message):
-    await _handle_template_command(
-        message, "followup_template", "Текст вопроса о самочувствии",
-        DEFAULT_FOLLOWUP_TEMPLATE, "/followup_template",
+    await _handle_template_command(message, "followup")
+
+
+@user_router.callback_query(F.data.in_({"tpl_reminder", "tpl_followup"}))
+async def cb_template(callback: CallbackQuery, state: FSMContext):
+    kind = callback.data.removeprefix("tpl_")
+    user = await _get_user_for(callback.from_user)
+    await _remove_keyboard(callback)
+
+    if user.get("plan", "free") == "free":
+        await callback.message.answer(_template_info(user, kind))
+        await callback.message.answer(
+            TEMPLATE_PRO_ONLY, reply_markup=kb_subscribe(),
+        )
+    else:
+        await state.set_state(UserStates.waiting_template)
+        await state.set_data({"template_kind": kind})
+        await callback.message.answer(
+            _template_info(user, kind) + TEMPLATE_EDIT_HINT,
+            reply_markup=kb_template_edit(kind),
+        )
+    await callback.answer()
+
+
+@user_router.callback_query(F.data.startswith("tpl_reset_"))
+async def cb_template_reset(callback: CallbackQuery, state: FSMContext):
+    kind = callback.data.removeprefix("tpl_reset_")
+    if kind not in _TEMPLATES:
+        await callback.answer()
+        return
+    await state.clear()
+    await set_template(callback.from_user.id, _TEMPLATES[kind][0], None)
+    await _remove_keyboard(callback)
+    await callback.message.answer(
+        TEMPLATE_RESET, reply_markup=kb_clients_menu(),
     )
+    await callback.answer()
+
+
+@user_router.message(UserStates.waiting_template, F.text)
+async def on_template_text(message: Message, state: FSMContext):
+    data = await state.get_data()
+    await state.clear()
+    kind = data.get("template_kind")
+    if kind not in _TEMPLATES:
+        return
+    await set_template(
+        message.from_user.id, _TEMPLATES[kind][0], message.text.strip(),
+    )
+    await message.answer(TEMPLATE_SAVED, reply_markup=kb_clients_menu())
 
 
 # ── /feedback ───────────────────────────────────────────────────────────────

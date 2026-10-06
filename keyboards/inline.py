@@ -20,10 +20,14 @@ def kb_more_menu() -> InlineKeyboardMarkup:
     builder.button(
         text="💳 Тариф и подписка", callback_data="action_subscribe"
     )
+    builder.button(text="🎁 Промокод", callback_data="action_promo")
     builder.button(text="❓ Как пользоваться", callback_data="action_help")
     builder.button(
         text="💬 Написать разработчику",
         callback_data="action_feedback",
+    )
+    builder.button(
+        text="🗑 Удалить мои данные", callback_data="action_delete"
     )
     builder.button(text="← Назад", callback_data="action_menu_main")
     builder.adjust(1)
@@ -38,7 +42,48 @@ def kb_clients_menu() -> InlineKeyboardMarkup:
     builder.button(
         text="📋 Список записей", callback_data="action_clients_list"
     )
+    builder.button(
+        text="✏️ Текст напоминания (Pro)", callback_data="tpl_reminder"
+    )
+    builder.button(
+        text="✏️ Текст вопроса о самочувствии (Pro)",
+        callback_data="tpl_followup",
+    )
     builder.button(text="← Меню", callback_data="action_back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def kb_clients_list(items: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    """Список записей: по кнопке удаления на каждую запись.
+
+    items — пары (id записи, подпись кнопки).
+    """
+    builder = InlineKeyboardBuilder()
+    for appt_id, label in items:
+        builder.button(text=f"🗑 {label}", callback_data=f"appt_del_{appt_id}")
+    builder.button(text="← Назад", callback_data="action_clients")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def kb_appt_delete_confirm(appt_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🗑 Да, удалить", callback_data=f"appt_delok_{appt_id}"
+    )
+    builder.button(text="← Отмена", callback_data="action_clients_list")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def kb_template_edit(kind: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="↩️ Вернуть стандартный текст",
+        callback_data=f"tpl_reset_{kind}",
+    )
+    builder.button(text="← Назад", callback_data="action_clients")
     builder.adjust(1)
     return builder.as_markup()
 
