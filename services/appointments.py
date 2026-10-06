@@ -33,17 +33,33 @@ CHECK_INTERVAL_SECONDS = 15 * 60  # раз в 15 минут — точность
 FOLLOWUP_MAX_AGE_DAYS = 8
 
 _DATETIME_RE = re.compile(
-    r"^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?\s+(\d{1,2}):(\d{2})$"
+    r"^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?\s+(\d{1,2}):(\d{2})(?:\s+(.+))?$"
 )
 
 
 # ── Разбор и форматирование даты/времени ───────────────────────────────────
+
+def parse_appointment_input(
+    text: str, now: datetime | None = None,
+) -> tuple[datetime | None, str | None]:
+    """Парсит «15.09 14:00 Анна» → (дата, имя клиента).
+
+    Имя необязательно: для «15.09 14:00» вернётся (дата, None).
+    Если дату распознать не удалось — (None, None).
+    """
+    match = _DATETIME_RE.match(text.strip())
+    if not match:
+        return None, None
+    name = (match.group(6) or "").strip() or None
+    return parse_appointment_datetime(text, now), name
+
 
 def parse_appointment_datetime(
     text: str, now: datetime | None = None,
 ) -> datetime | None:
     """Парсит «15.09 14:00» / «15.09.2026 14:00» (время — МСК).
 
+    Текст после времени (имя клиента) игнорируется.
     Если год не указан и дата с ним уже в прошлом — переносим на
     следующий год. Возвращает None, если распознать не удалось или
     результат всё равно в прошлом.
@@ -52,7 +68,7 @@ def parse_appointment_datetime(
     if not match:
         return None
 
-    day, month, year_raw, hour, minute = match.groups()
+    day, month, year_raw, hour, minute, _name = match.groups()
     now = now or datetime.now(MOSCOW_TZ)
 
     if year_raw:

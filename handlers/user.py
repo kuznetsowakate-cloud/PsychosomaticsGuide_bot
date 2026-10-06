@@ -15,12 +15,11 @@ from aiogram.types import (
 
 from keyboards.inline import (
     kb_main_menu, kb_subscribe, kb_back, kb_after_answer, kb_chain_result,
-    kb_terms_accept, kb_delete_confirm, kb_after_answer_with_related,
-    kb_clients_menu,
+    kb_terms_accept, kb_delete_confirm, kb_clients_menu,
 )
 from services.appointments import (
     create_appointment, list_upcoming_appointments, delete_appointment,
-    set_template, parse_appointment_datetime, format_when, to_moscow,
+    set_template, parse_appointment_input, format_when, to_moscow,
 )
 from services.chain_calc import calculate_chain, parse_chain_input
 from services.rag import rag_search
@@ -255,10 +254,14 @@ async def on_appointment_datetime(message: Message, state: FSMContext):
         )
         return
 
-    when_dt = parse_appointment_datetime(message.text or "")
+    when_dt, client_name = parse_appointment_input(message.text or "")
     if not when_dt:
         await message.answer(APPT_DATETIME_ERROR)
         return  # остаёмся в том же состоянии — даём попробовать ещё раз
+
+    if client_name:
+        await _save_appointment(message, state, client_name, when_dt)
+        return
 
     await state.set_data({"appointment_at": when_dt.isoformat()})
     await state.set_state(UserStates.waiting_appointment_name)
@@ -274,8 +277,13 @@ async def on_appointment_name(message: Message, state: FSMContext):
 
     data = await state.get_data()
     when_dt = datetime.fromisoformat(data["appointment_at"])
-    await state.clear()
+    await _save_appointment(message, state, client_name, when_dt)
 
+
+async def _save_appointment(
+    message: Message, state: FSMContext, client_name: str, when_dt: datetime,
+) -> None:
+    await state.clear()
     await create_appointment(message.from_user.id, client_name, when_dt)
 
     await message.answer(
@@ -635,30 +643,6 @@ async def on_chain_input(message: Message, state: FSMContext):
             await message.answer(part, reply_markup=kb, parse_mode="HTML")
 
 
-@user_router.callback_query(F.data.startswith("related_"))
-async def cb_related_question(callback: CallbackQuery, state: FSMContext):
-    try:
-        idx = int(callback.data.split("_")[1])
-    except (ValueError, IndexError):
-        await callback.answer()
-        return
-
-    data = await state.get_data()
-    questions = data.get("related_questions", [])
-
-    if idx >= len(questions):
-        await callback.answer("Вопрос недоступен")
-        return
-
-    question = questions[idx]
-    await _remove_keyboard(callback)
-    await callback.answer()
-    await callback.message.answer(f"🔍 <i>{question}</i>")
-    await _process_query(
-        callback.message, question, state, from_user=callback.from_user,
-    )
-
-
 @user_router.message(F.text & ~F.text.startswith("/"))
 async def on_plain_text(message: Message, state: FSMContext):
     """Любой текст без команды — обрабатываем как поисковый запрос."""
@@ -712,11 +696,7 @@ async def _process_query(
             await message.answer(NO_RESULTS, reply_markup=kb_after_answer())
             return
 
-        kb = (
-            kb_after_answer_with_related(result.related_questions)
-            if result.related_questions
-            else kb_after_answer()
-        )
+        kb = kb_after_answer()
 
         answer = result.answer
         if len(answer) <= 4096:
@@ -742,7 +722,6 @@ async def _process_query(
         await state.set_data({
             "history": new_history,
             "last_query_at": time.time(),
-            "related_questions": result.related_questions,
         })
 
     except Exception as e:

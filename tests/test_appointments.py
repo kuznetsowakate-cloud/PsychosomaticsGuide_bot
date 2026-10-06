@@ -3,7 +3,8 @@ from datetime import datetime
 
 from config.settings import MOSCOW_TZ
 from services.appointments import (
-    format_when, parse_appointment_datetime, render_template,
+    format_when, parse_appointment_datetime, parse_appointment_input,
+    render_template,
 )
 
 NOW = datetime(2026, 9, 11, 10, 0, tzinfo=MOSCOW_TZ)
@@ -57,3 +58,19 @@ def test_render_template_falls_back_on_broken_placeholder():
 def test_format_when():
     when = datetime(2026, 9, 15, 14, 0, tzinfo=MOSCOW_TZ)
     assert format_when(when) == "15.09.2026 14:00"
+
+
+def test_parse_input_with_client_name():
+    dt, name = parse_appointment_input("15.09 14:00 Анна Иванова", now=NOW)
+    assert dt == datetime(2026, 9, 15, 14, 0, tzinfo=MOSCOW_TZ)
+    assert name == "Анна Иванова"
+
+
+def test_parse_input_without_client_name():
+    dt, name = parse_appointment_input("15.09.2026 14:00", now=NOW)
+    assert dt == datetime(2026, 9, 15, 14, 0, tzinfo=MOSCOW_TZ)
+    assert name is None
+
+
+def test_parse_input_invalid():
+    assert parse_appointment_input("Анна 15.09", now=NOW) == (None, None)
