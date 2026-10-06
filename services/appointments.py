@@ -32,70 +32,111 @@ CHECK_INTERVAL_SECONDS = 15 * 60  # раз в 15 минут — точность
 # такие записи обычно означают, что психолог давно не открывал бота.
 FOLLOWUP_MAX_AGE_DAYS = 8
 
-_DATETIME_RE = re.compile(
-    r"^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?\s+(\d{1,2}):(\d{2})(?:\s+(.+))?$"
+# Дата: «15.09», «15/09», «15-09», «15.09.2026», «15.09.26»,
+# «15 сентября», «15 сент 2026», «сегодня», «завтра», «послезавтра».
+_DATE = (
+    r"(?:(?P<day>\d{1,2})[./-](?P<month>\d{1,2})"
+    r"(?:[./-](?P<year>\d{4}|\d{2}))?"
+    r"|(?P<wday>\d{1,2})\s+(?P<mword>[а-яё]{3,9})\.?(?:\s+(?P<wyear>\d{4}))?"
+    r"|(?P<rel>сегодня|завтра|послезавтра))"
 )
+# Время: «14:00», «14.00», «14-00», «14», «14ч», «14 часов».
+_TIME = (
+    r"(?P<hour>\d{1,2})(?:[:.\-](?P<minute>\d{2}))?"
+    r"(?:\s*(?:ч|час|часа|часов)\.?)?"
+)
+# Между датой и временем: пробел, запятая, «в».
+_SEP = r"(?:\s*,\s*|\s+)(?:в\s+)?"
+# Имя клиента после даты и времени (можно через запятую или тире).
+_NAME = r"(?:\s*[,—–-]?\s+(?P<name>.+))?"
+
+_DATETIME_PATTERNS = [
+    re.compile(rf"^(?:в\s+)?{_DATE}{_SEP}{_TIME}{_NAME}$", re.IGNORECASE),
+    re.compile(rf"^(?:в\s+)?{_TIME}{_SEP}{_DATE}{_NAME}$", re.IGNORECASE),
+]
+
+_MONTH_PREFIXES = {
+    "янв": 1, "фев": 2, "мар": 3, "апр": 4, "май": 5, "мая": 5,
+    "июн": 6, "июл": 7, "авг": 8, "сен": 9, "окт": 10, "ноя": 11,
+    "дек": 12,
+}
+_RELATIVE_DAYS = {"сегодня": 0, "завтра": 1, "послезавтра": 2}
 
 
 # ── Разбор и форматирование даты/времени ───────────────────────────────────
 
+def _month_from_word(word: str) -> int | None:
+    return _MONTH_PREFIXES.get(word.lower().replace("ё", "е")[:3])
+
+
+def _build_datetime(groups: dict, now: datetime) -> datetime | None:
+    """Собирает datetime из групп регулярки; None, если дата невалидна."""
+    hour = int(groups["hour"])
+    minute = int(groups["minute"] or 0)
+    roll_year = False
+
+    try:
+        if groups["rel"]:
+            base = now + timedelta(days=_RELATIVE_DAYS[groups["rel"].lower()])
+            return base.replace(
+                hour=hour, minute=minute, second=0, microsecond=0,
+            )
+
+        if groups["mword"]:
+            day, month = int(groups["wday"]), _month_from_word(groups["mword"])
+            if month is None:
+                return None
+            year_raw = groups["wyear"]
+        else:
+            day, month = int(groups["day"]), int(groups["month"])
+            year_raw = groups["year"]
+
+        if year_raw:
+            year = int(year_raw)
+            if year < 100:
+                year += 2000
+        else:
+            year, roll_year = now.year, True
+
+        dt = datetime(year, month, day, hour, minute, tzinfo=MOSCOW_TZ)
+        # Год не указан и дата уже прошла — значит, имеется в виду следующий
+        if roll_year and dt <= now:
+            dt = dt.replace(year=year + 1)
+        return dt
+    except ValueError:
+        return None
+
+
 def parse_appointment_input(
     text: str, now: datetime | None = None,
 ) -> tuple[datetime | None, str | None]:
-    """Парсит «15.09 14:00 Анна» → (дата, имя клиента).
+    """Парсит «15.09 14:00 Анна» → (дата и время в МСК, имя клиента).
 
+    Понимает разные варианты записи: «15.09 14.00», «15/09 в 14-00»,
+    «15 сентября 14:00», «завтра в 14», «14:00 15.09» и т.п.
     Имя необязательно: для «15.09 14:00» вернётся (дата, None).
-    Если дату распознать не удалось — (None, None).
+    Если распознать не удалось или время уже в прошлом — (None, None).
     """
-    match = _DATETIME_RE.match(text.strip())
-    if not match:
-        return None, None
-    name = (match.group(6) or "").strip() or None
-    return parse_appointment_datetime(text, now), name
+    text = " ".join(text.split())
+    now = now or datetime.now(MOSCOW_TZ)
+
+    for pattern in _DATETIME_PATTERNS:
+        match = pattern.match(text)
+        if not match:
+            continue
+        dt = _build_datetime(match.groupdict(), now)
+        if dt and dt > now:
+            name = (match.group("name") or "").strip() or None
+            return dt, name
+
+    return None, None
 
 
 def parse_appointment_datetime(
     text: str, now: datetime | None = None,
 ) -> datetime | None:
-    """Парсит «15.09 14:00» / «15.09.2026 14:00» (время — МСК).
-
-    Текст после времени (имя клиента) игнорируется.
-    Если год не указан и дата с ним уже в прошлом — переносим на
-    следующий год. Возвращает None, если распознать не удалось или
-    результат всё равно в прошлом.
-    """
-    match = _DATETIME_RE.match(text.strip())
-    if not match:
-        return None
-
-    day, month, year_raw, hour, minute, _name = match.groups()
-    now = now or datetime.now(MOSCOW_TZ)
-
-    if year_raw:
-        year = int(year_raw)
-        if year < 100:
-            year += 2000
-    else:
-        year = now.year
-
-    try:
-        dt = datetime(
-            year, int(month), int(day), int(hour), int(minute),
-            tzinfo=MOSCOW_TZ,
-        )
-    except ValueError:
-        return None
-
-    if not year_raw and dt <= now:
-        try:
-            dt = dt.replace(year=year + 1)
-        except ValueError:
-            return None
-
-    if dt <= now:
-        return None
-
-    return dt
+    """То же, что parse_appointment_input, но возвращает только дату."""
+    return parse_appointment_input(text, now)[0]
 
 
 def to_moscow(value: str) -> datetime:
