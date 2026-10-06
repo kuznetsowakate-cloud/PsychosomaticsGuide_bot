@@ -148,7 +148,7 @@ def to_moscow(value: str) -> datetime:
 
 
 def format_when(dt: datetime) -> str:
-    return dt.strftime("%d.%m.%Y %H:%M")
+    return dt.strftime("%d.%m.%Y %H:%M") + " по мск"
 
 
 def render_template(template: str, client_name: str, when_dt: datetime) -> str:

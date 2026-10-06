@@ -59,7 +59,7 @@ def test_render_template_falls_back_on_broken_placeholder():
 
 def test_format_when():
     when = datetime(2026, 9, 15, 14, 0, tzinfo=MOSCOW_TZ)
-    assert format_when(when) == "15.09.2026 14:00"
+    assert format_when(when) == "15.09.2026 14:00 по мск"
 
 
 def test_parse_input_with_client_name():
