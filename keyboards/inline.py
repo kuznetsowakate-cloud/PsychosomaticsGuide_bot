@@ -8,7 +8,7 @@ def kb_main_menu() -> InlineKeyboardMarkup:
         text="🔍 Поиск по справочнику", callback_data="action_search"
     )
     builder.button(text="🔗 Цепочка", callback_data="action_chain")
-    builder.button(text="📅 Напоминания", callback_data="action_clients")
+    builder.button(text="📅 Работа с клиентами", callback_data="action_clients")
     builder.button(text="⚙️ Ещё", callback_data="action_more")
     builder.adjust(1, 2, 1)
     return builder.as_markup()
