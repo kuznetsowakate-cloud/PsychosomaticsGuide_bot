@@ -291,12 +291,11 @@ async def _save_appointment(
         logger.exception(
             "Не удалось сохранить запись клиента для %d", message.from_user.id,
         )
-        await message.answer(APPT_SAVE_ERROR, reply_markup=kb_main_menu())
+        await message.answer(APPT_SAVE_ERROR)
         return
 
     await message.answer(
         APPT_SAVED.format(client_name=client_name, when=format_when(when_dt)),
-        reply_markup=kb_main_menu(),
     )
 
 
